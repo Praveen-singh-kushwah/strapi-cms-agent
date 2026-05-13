@@ -1,0 +1,12 @@
+# Placeholder Docker Compose file for local development.
+#
+# Full service definitions will be added later for:
+# - PostgreSQL
+# - Redis
+# - web
+# - backend
+# - ai-agent
+# - strapi-worker
+# - Strapi CMS runtime
+
+services: {}
