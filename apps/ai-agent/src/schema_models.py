@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 FieldType = Literal[
@@ -30,7 +30,11 @@ KEBAB_CASE_PATTERN = re.compile(r"^[a-z][a-z0-9-]*$")
 UID_PATTERN = re.compile(r"^[a-z][a-z0-9-]*\.[a-z][a-z0-9-]*$")
 
 
-class FieldPlan(BaseModel):
+class StrictBaseModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class FieldPlan(StrictBaseModel):
     name: str
     type: FieldType
     required: bool = False
@@ -55,7 +59,7 @@ class FieldPlan(BaseModel):
         return self
 
 
-class ComponentPlan(BaseModel):
+class ComponentPlan(StrictBaseModel):
     uid: str
     category: str
     displayName: str
@@ -77,7 +81,7 @@ class ComponentPlan(BaseModel):
         return value
 
 
-class SingleTypeAttribute(BaseModel):
+class SingleTypeAttribute(StrictBaseModel):
     name: str
     type: FieldType
     component: str | None = None
@@ -98,7 +102,7 @@ class SingleTypeAttribute(BaseModel):
         return self
 
 
-class PageModel(BaseModel):
+class PageModel(StrictBaseModel):
     kind: PageKind
     apiName: str
     displayName: str
@@ -114,12 +118,12 @@ class PageModel(BaseModel):
         return value
 
 
-class SeoPlan(BaseModel):
+class SeoPlan(StrictBaseModel):
     enabled: bool = True
     component: str = "shared.seo"
 
 
-class GlobalBlockPlan(BaseModel):
+class GlobalBlockPlan(StrictBaseModel):
     handling: ComponentHandling
     apiName: str | None = None
     componentPlan: str | None = None
@@ -132,18 +136,125 @@ class GlobalBlockPlan(BaseModel):
         return value
 
 
-class GlobalBlocksPlan(BaseModel):
+class GlobalBlocksPlan(StrictBaseModel):
     header: GlobalBlockPlan | None = None
     footer: GlobalBlockPlan | None = None
 
 
-class CmsPlan(BaseModel):
+class LinkSeed(StrictBaseModel):
+    text: str = ""
+    url: str = ""
+
+
+class ImageSeed(StrictBaseModel):
+    src: str = ""
+    alt: str = ""
+
+
+class SeoSeed(StrictBaseModel):
+    meta_title: str = ""
+
+
+class HeroSeed(StrictBaseModel):
+    eyebrow: str = ""
+    title: str = ""
+    description: str = ""
+    primary_cta: LinkSeed | None = None
+    secondary_cta: LinkSeed | None = None
+    image: ImageSeed | None = None
+
+
+class FeatureCardSeed(StrictBaseModel):
+    title: str = ""
+    description: str = ""
+    image: ImageSeed | None = None
+    cta: LinkSeed | None = None
+
+
+class ItemsSectionSeed(StrictBaseModel):
+    title: str = ""
+    description: str = ""
+    items: list[FeatureCardSeed] = Field(default_factory=list)
+
+
+class TestimonialCardSeed(StrictBaseModel):
+    quote: str = ""
+    author_name: str = ""
+    author_role: str = ""
+
+
+class TestimonialsSeed(StrictBaseModel):
+    title: str = ""
+    description: str = ""
+    items: list[TestimonialCardSeed] = Field(default_factory=list)
+
+
+class PricingFeatureSeed(StrictBaseModel):
+    text: str = ""
+
+
+class PricingCardSeed(StrictBaseModel):
+    title: str = ""
+    price: str = ""
+    description: str = ""
+    features: list[PricingFeatureSeed] = Field(default_factory=list)
+    is_highlighted: bool = False
+
+
+class PricingSeed(StrictBaseModel):
+    title: str = ""
+    description: str = ""
+    items: list[PricingCardSeed] = Field(default_factory=list)
+
+
+class FaqItemSeed(StrictBaseModel):
+    question: str = ""
+    answer: str = ""
+
+
+class FaqSeed(StrictBaseModel):
+    title: str = ""
+    description: str = ""
+    items: list[FaqItemSeed] = Field(default_factory=list)
+
+
+class FormFieldSeed(StrictBaseModel):
+    label: str = ""
+    name: str = ""
+    input_type: str = ""
+    required: bool = False
+
+
+class FormConfigSeed(StrictBaseModel):
+    action: str = ""
+    method: str = ""
+    submit_label: str = ""
+    fields: list[FormFieldSeed] = Field(default_factory=list)
+
+
+class ContactSeed(StrictBaseModel):
+    title: str = ""
+    description: str = ""
+    form: FormConfigSeed = Field(default_factory=FormConfigSeed)
+
+
+class SeedDataPlan(StrictBaseModel):
+    seo: SeoSeed = Field(default_factory=SeoSeed)
+    hero: HeroSeed | None = None
+    features: ItemsSectionSeed | None = None
+    testimonials: TestimonialsSeed | None = None
+    pricing: PricingSeed | None = None
+    faq: FaqSeed | None = None
+    contact: ContactSeed | None = None
+
+
+class CmsPlan(StrictBaseModel):
     pageModel: PageModel
     seo: SeoPlan = Field(default_factory=SeoPlan)
     globalBlocks: GlobalBlocksPlan = Field(default_factory=GlobalBlocksPlan)
     components: list[ComponentPlan]
     singleTypeAttributes: list[SingleTypeAttribute]
-    seedData: dict[str, Any]
+    seedData: SeedDataPlan
     warnings: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
@@ -162,7 +273,8 @@ class CmsPlan(BaseModel):
         if len(attribute_names) != len(set(attribute_names)):
             raise ValueError("single type attributes must be unique")
 
-        seed_keys = set(self.seedData.keys())
+        seed_dict = self.seedData.model_dump(exclude_none=True)
+        seed_keys = set(seed_dict.keys())
         attribute_keys = set(attribute_names)
         unknown_seed_keys = seed_keys - attribute_keys
         if unknown_seed_keys:

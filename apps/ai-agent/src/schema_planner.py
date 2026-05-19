@@ -8,8 +8,12 @@ LangGraph/LangChain are introduced.
 from __future__ import annotations
 
 import json
+import os
 import re
 from typing import Any, TypedDict
+
+from dotenv import load_dotenv
+from openai import OpenAI
 
 from src.schema_models import (
     CmsPlan,
@@ -37,20 +41,29 @@ DEFAULT_PLANNER_CONTEXT = {
     "componentCategoryPrefix": "landing-page",
     "namingStyle": "snake_case_fields",
     "reuseSharedComponents": True,
+    "modelName": "gpt-5.4-mini",
+    "openRouterModelName": "~openai/gpt-latest",
+    "maxTokens": 4096,
+    "provider": "openai",
+    "structuredOutputMode": "json_schema",
+    "compactInput": True,
+    "useLLM": "auto",
 }
 
 
 def llm_section_planner_node(state: AgentState) -> AgentState:
     """LangGraph-compatible node shape for section planning.
 
-    This currently uses the deterministic planner so the flow can run locally
-    without API keys. A real LLM call can replace generate_cms_plan while keeping
-    the same CmsPlan validation contract.
+    Uses the real OpenAI planner when configured, and falls back to the
+    deterministic planner when no API key is present or LLM mode is disabled.
     """
     try:
         html_analysis = state["html_analysis"]
-        context = {**DEFAULT_PLANNER_CONTEXT, **state.get("planner_context", {})}
-        cms_plan = generate_cms_plan(html_analysis, context)
+        context = resolve_planner_context(state.get("planner_context", {}))
+        cms_plan = generate_llm_cms_plan(html_analysis, context) if should_use_llm(context) else generate_cms_plan(
+            html_analysis,
+            context,
+        )
         return {**state, "cms_plan": cms_plan.model_dump()}
     except Exception as exc:  # pragma: no cover - notebook-friendly error capture
         errors = [*state.get("errors", []), str(exc)]
@@ -62,7 +75,8 @@ def build_section_planner_prompt(
     planner_context: dict[str, Any] | None = None,
 ) -> str:
     """Build the strict prompt that the future LLM planner should receive."""
-    context = {**DEFAULT_PLANNER_CONTEXT, **(planner_context or {})}
+    context = resolve_planner_context(planner_context)
+    prompt_analysis = compact_html_analysis(html_analysis) if context.get("compactInput") else html_analysis
     return f"""You are a Strapi CMS architect.
 
 You will receive structured HTML section analysis from a deterministic parser.
@@ -72,6 +86,7 @@ Convert it into a Strapi CMS plan.
 
 Rules:
 - Output only valid JSON matching the CmsPlan schema.
+- The root object must contain exactly: pageModel, seo, globalBlocks, components, singleTypeAttributes, seedData, warnings.
 - Do not generate code files.
 - Use a singleType for the page.
 - Add an SEO component.
@@ -91,8 +106,260 @@ Planner context:
 {json.dumps(context, indent=2)}
 
 HTML analysis:
-{json.dumps(html_analysis, indent=2)}
+{json.dumps(prompt_analysis, indent=2)}
 """
+
+
+def compact_html_analysis(html_analysis: dict[str, Any]) -> dict[str, Any]:
+    """Reduce detector output before sending it to an LLM.
+
+    The full detector output is useful for debugging, but the LLM planner only
+    needs page/global summaries, semantic hints, structural signals, and
+    structured content. This keeps OpenRouter prompts under smaller limits.
+    """
+    return {
+        "page": html_analysis.get("page", {}),
+        "globalBlocks": compact_global_blocks(html_analysis.get("globalBlocks", {})),
+        "candidateSections": [
+            compact_candidate_section(section)
+            for section in html_analysis.get("candidateSections", [])
+        ],
+    }
+
+
+def compact_global_blocks(global_blocks: dict[str, Any]) -> dict[str, Any]:
+    result = {}
+    for key in ("header", "footer"):
+        block = global_blocks.get(key)
+        if not block:
+            result[key] = None
+            continue
+        result[key] = {
+            "brand": block.get("brand", ""),
+            "navigationLinks": block.get("navigationLinks") or block.get("links") or [],
+            "cta": block.get("cta"),
+            "description": block.get("description", ""),
+            "copyright": block.get("copyright", ""),
+        }
+    return result
+
+
+def compact_candidate_section(section: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "index": section.get("index"),
+        "semanticHint": section.get("semanticHint"),
+        "id": section.get("id"),
+        "heading": section.get("heading"),
+        "headingLevel": section.get("headingLevel"),
+        "structuredContent": section.get("structuredContent", {}),
+        "structureSignals": section.get("structureSignals", {}),
+        "repeatedGroups": [
+            {
+                "className": group.get("className"),
+                "count": group.get("count"),
+                "fieldsDetected": group.get("fieldsDetected", []),
+                "sampleItems": group.get("sampleItems", []),
+            }
+            for group in section.get("repeatedGroups", [])
+        ],
+    }
+
+
+def generate_llm_cms_plan(
+    html_analysis: dict[str, Any],
+    planner_context: dict[str, Any] | None = None,
+) -> CmsPlan:
+    """Generate a validated CMS plan with OpenAI Structured Outputs."""
+    context = resolve_planner_context(planner_context)
+    if context["provider"] == "openrouter":
+        return generate_openrouter_cms_plan(html_analysis, context)
+
+    model_name = context["modelName"]
+    prompt = build_section_planner_prompt(html_analysis, context)
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise ValueError("OPENAI_API_KEY is required to run the real LLM planner")
+
+    client = OpenAI(api_key=api_key)
+    response = client.responses.parse(
+        model=model_name,
+        input=[
+            {
+                "role": "system",
+                "content": "You are a precise Strapi CMS architect. Return only the structured CMS plan.",
+            },
+            {
+                "role": "user",
+                "content": prompt,
+            },
+        ],
+        text_format=CmsPlan,
+    )
+
+    if response.output_parsed is None:
+        raise ValueError("OpenAI planner did not return a parsed CmsPlan")
+
+    return response.output_parsed if isinstance(response.output_parsed, CmsPlan) else CmsPlan.model_validate(
+        response.output_parsed,
+    )
+
+
+def generate_openrouter_cms_plan(
+    html_analysis: dict[str, Any],
+    planner_context: dict[str, Any] | None = None,
+) -> CmsPlan:
+    """Generate a validated CMS plan through OpenRouter's OpenAI-compatible API."""
+    context = resolve_planner_context(planner_context)
+    model_name = context.get("openRouterModelName") or context["modelName"]
+    prompt = build_section_planner_prompt(html_analysis, context)
+    api_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
+
+    if not api_key:
+        raise ValueError("OPENROUTER_API_KEY is required to run the OpenRouter planner")
+
+    client = OpenAI(
+        api_key=api_key,
+        base_url=os.getenv("OPENAI_BASE_URL") or "https://openrouter.ai/api/v1",
+        default_headers=openrouter_headers(),
+    )
+    completion = client.chat.completions.create(
+        model=model_name,
+        messages=[
+            {
+                "role": "system",
+                "content": "You are a precise Strapi CMS architect. Return only valid JSON matching the requested schema.",
+            },
+            {
+                "role": "user",
+                "content": prompt,
+            },
+        ],
+        response_format=openrouter_response_format(context),
+        max_tokens=int(context["maxTokens"]),
+    )
+
+    choice = completion.choices[0]
+    content = choice.message.content
+    if not content:
+        raise ValueError(
+            "OpenRouter planner returned an empty response "
+            f"(finish_reason={choice.finish_reason}, message={choice.message.model_dump()})"
+        )
+
+    return CmsPlan.model_validate_json(content)
+
+
+def openrouter_response_format(context: dict[str, Any]) -> dict[str, Any]:
+    mode = str(context.get("structuredOutputMode") or "json_schema").lower()
+    if mode in {"json_object", "json", "json_mode"}:
+        return {"type": "json_object"}
+
+    return {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "cms_plan",
+            "strict": True,
+            "schema": openrouter_strict_schema(CmsPlan.model_json_schema()),
+        },
+    }
+
+
+def openrouter_headers() -> dict[str, str]:
+    headers = {}
+    if os.getenv("OPENROUTER_SITE_URL"):
+        headers["HTTP-Referer"] = os.getenv("OPENROUTER_SITE_URL", "")
+    if os.getenv("OPENROUTER_SITE_NAME"):
+        headers["X-OpenRouter-Title"] = os.getenv("OPENROUTER_SITE_NAME", "")
+    return headers
+
+
+def openrouter_strict_schema(schema: dict[str, Any]) -> dict[str, Any]:
+    """Adjust Pydantic JSON Schema for providers that require strict objects.
+
+    Some OpenRouter providers reject object schemas unless every property is
+    listed in `required`. This adapter changes only the schema sent to the LLM;
+    the returned data is still validated by CmsPlan afterward.
+    """
+    normalized = json.loads(json.dumps(schema))
+    force_required_properties(normalized)
+    return normalized
+
+
+def force_required_properties(node: Any) -> None:
+    if isinstance(node, dict):
+        if node.get("type") == "object" and isinstance(node.get("properties"), dict):
+            node["required"] = list(node["properties"].keys())
+            node["additionalProperties"] = False
+
+        for value in node.values():
+            force_required_properties(value)
+    elif isinstance(node, list):
+        for item in node:
+            force_required_properties(item)
+
+
+def should_use_llm(planner_context: dict[str, Any] | None = None) -> bool:
+    """Decide whether to call the real LLM planner."""
+    context = resolve_planner_context(planner_context)
+    mode = str(context.get("useLLM", "auto")).lower()
+    has_api_key = bool(os.getenv("OPENAI_API_KEY") or os.getenv("OPENROUTER_API_KEY"))
+
+    if mode in {"true", "1", "yes", "on"}:
+        if not has_api_key:
+            raise ValueError("USE_LLM_PLANNER is enabled but no LLM API key is set")
+        return True
+
+    if mode in {"false", "0", "no", "off"}:
+        return False
+
+    return has_api_key
+
+
+def resolve_planner_context(planner_context: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Merge defaults, environment values, and explicit planner context."""
+    load_dotenv()
+    explicit = planner_context or {}
+    context = {**DEFAULT_PLANNER_CONTEXT, **explicit}
+
+    if not explicit.get("modelName"):
+        context["modelName"] = os.getenv("MODEL_NAME") or DEFAULT_PLANNER_CONTEXT["modelName"]
+    if not explicit.get("openRouterModelName"):
+        context["openRouterModelName"] = os.getenv("OPENROUTER_MODEL_NAME") or DEFAULT_PLANNER_CONTEXT[
+            "openRouterModelName"
+        ]
+    if not explicit.get("maxTokens"):
+        context["maxTokens"] = int(os.getenv("LLM_MAX_TOKENS") or DEFAULT_PLANNER_CONTEXT["maxTokens"])
+    if not explicit.get("provider"):
+        context["provider"] = detect_llm_provider()
+    if not explicit.get("structuredOutputMode"):
+        context["structuredOutputMode"] = os.getenv("LLM_STRUCTURED_OUTPUT_MODE") or DEFAULT_PLANNER_CONTEXT[
+            "structuredOutputMode"
+        ]
+    if "compactInput" not in explicit:
+        context["compactInput"] = parse_bool_env("LLM_COMPACT_INPUT", DEFAULT_PLANNER_CONTEXT["compactInput"])
+    if "useLLM" not in explicit:
+        context["useLLM"] = os.getenv("USE_LLM_PLANNER") or DEFAULT_PLANNER_CONTEXT["useLLM"]
+
+    return context
+
+
+def detect_llm_provider() -> str:
+    provider = (os.getenv("LLM_PROVIDER") or "").lower().strip()
+    if provider:
+        return provider
+
+    api_key = os.getenv("OPENAI_API_KEY", "")
+    if os.getenv("OPENROUTER_API_KEY") or api_key.startswith("sk-or-"):
+        return "openrouter"
+
+    return DEFAULT_PLANNER_CONTEXT["provider"]
+
+
+def parse_bool_env(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.lower().strip() in {"true", "1", "yes", "on"}
 
 
 def generate_cms_plan(
