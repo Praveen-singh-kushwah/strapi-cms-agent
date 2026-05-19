@@ -1,1 +1,2 @@
-# Dependencies will be added in Step 8.
+beautifulsoup4
+lxml

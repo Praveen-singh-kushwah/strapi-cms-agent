@@ -8,7 +8,8 @@ from typing import Any
 from bs4 import BeautifulSoup, Tag
 
 
-UNWANTED_TAGS = ("script", "style", "noscript")
+NOISE_TAGS = ("script", "style", "noscript", "svg", "meta", "link")
+UNWANTED_TAGS = NOISE_TAGS
 SECTION_TAGS = ("header", "nav", "main", "section", "article", "footer")
 
 
@@ -18,7 +19,7 @@ def load_html_from_file(file_path: str | Path) -> str:
 
 
 def parse_html(html: str) -> BeautifulSoup:
-    """Parse HTML with BeautifulSoup and remove unwanted executable/style tags."""
+    """Parse HTML with BeautifulSoup and remove non-content noise tags."""
     soup = BeautifulSoup(html, "lxml")
     remove_unwanted_tags(soup)
     return soup
@@ -28,6 +29,11 @@ def remove_unwanted_tags(soup: BeautifulSoup) -> None:
     """Remove tags that should not affect content structure analysis."""
     for tag in soup.find_all(UNWANTED_TAGS):
         tag.decompose()
+
+
+def find_page_root(soup: BeautifulSoup) -> Tag | BeautifulSoup:
+    """Prefer the visible page root that contains meaningful content."""
+    return soup.find("main") or soup.body or soup
 
 
 def clean_text(value: str | None) -> str:
@@ -67,6 +73,16 @@ def extract_links(soup: BeautifulSoup) -> list[dict[str, str]]:
         if href or text:
             links.append({"text": text, "href": href})
     return links
+
+
+def extract_buttons(soup: BeautifulSoup | Tag) -> list[dict[str, str]]:
+    buttons: list[dict[str, str]] = []
+    for button in soup.find_all(["a", "button"]):
+        text = clean_text(button.get_text(" "))
+        href = clean_text(button.get("href"))
+        if text:
+            buttons.append({"text": text, "href": href})
+    return buttons
 
 
 def extract_images(soup: BeautifulSoup) -> list[dict[str, str]]:
@@ -144,6 +160,7 @@ def build_dom_summary(file_path: str | Path) -> dict[str, Any]:
     return {
         "file_path": str(file_path),
         "title": extract_page_title(soup),
+        "root_tag": getattr(find_page_root(soup), "name", "document"),
         "headings": extract_headings(soup),
         "links": extract_links(soup),
         "images": extract_images(soup),
