@@ -212,6 +212,8 @@ def build_candidate_section(index: int, candidate: Tag) -> dict[str, Any]:
     images = extract_images(candidate)
     buttons = extract_buttons(candidate)
     forms = extract_forms(candidate)
+    has_form = detect_form(candidate)
+    has_faq_pattern = detect_faq_pattern(candidate)
 
     return {
         "index": index,
@@ -226,37 +228,62 @@ def build_candidate_section(index: int, candidate: Tag) -> dict[str, Any]:
         "buttons": buttons,
         "images": images,
         "structuredContent": extract_structured_content(candidate),
-        "hasButtons": bool(buttons),
-        "hasCards": bool(repeated_groups),
-        "hasTable": table is not None,
+        "structureSignals": {
+            "hasButtons": bool(buttons),
+            "hasCards": bool(repeated_groups),
+            "hasTable": table is not None,
+            "hasFaqPattern": has_faq_pattern,
+            "hasForm": has_form,
+            "hasImages": bool(images),
+            "childBlockCount": count_child_blocks(candidate),
+        },
         "table": table,
-        "hasFaqPattern": detect_faq_pattern(candidate),
-        "hasForm": detect_form(candidate),
-        "form": extract_form_details(candidate),
         "forms": forms,
-        "hasImages": bool(images),
-        "childBlockCount": count_child_blocks(candidate),
         "repeatedGroups": repeated_groups,
     }
 
 
 def extract_structured_content(tag: Tag) -> dict[str, Any]:
     hint = infer_semantic_hint(tag)
+    base_content = extract_section_title_description(tag)
 
     if hint == "hero":
-        return extract_hero_content(tag)
+        return {**base_content, **extract_hero_content(tag)}
     if hint == "pricing":
-        return {"items": extract_pricing_items(tag)}
+        return {**base_content, "items": extract_pricing_items(tag)}
     if hint == "faq":
-        return {"items": extract_faq_items(tag)}
+        return {**base_content, "items": extract_faq_items(tag)}
     if hint == "testimonial":
-        return {"items": extract_testimonial_items(tag)}
+        return {**base_content, "items": extract_testimonial_items(tag)}
     if hint == "feature":
-        return {"items": extract_card_items(tag)}
+        return {**base_content, "items": extract_card_items(tag)}
     if hint in ("contact", "form"):
-        return {"form": extract_form_details(tag)}
+        return {**base_content, "form": extract_form_details(tag)}
 
-    return {}
+    return base_content
+
+
+def extract_section_title_description(tag: Tag) -> dict[str, str]:
+    heading = extract_main_heading(tag)["text"]
+    description = ""
+
+    for paragraph in tag.find_all("p", recursive=False):
+        text = clean_text(paragraph.get_text(" "))
+        if text:
+            description = text
+            break
+
+    if not description:
+        for child in tag.find_all(recursive=False):
+            if child.name in ("div", "article"):
+                paragraph = child.find("p", recursive=False)
+                if paragraph:
+                    text = clean_text(paragraph.get_text(" "))
+                    if text:
+                        description = text
+                        break
+
+    return {"title": heading, "description": description}
 
 
 def extract_hero_content(tag: Tag) -> dict[str, Any]:
@@ -266,7 +293,6 @@ def extract_hero_content(tag: Tag) -> dict[str, Any]:
 
     return {
         "eyebrow": paragraphs[0] if paragraphs else "",
-        "title": extract_main_heading(tag)["text"],
         "description": paragraphs[1] if len(paragraphs) > 1 else "",
         "primaryCta": buttons[0] if buttons else None,
         "secondaryCta": buttons[1] if len(buttons) > 1 else None,
