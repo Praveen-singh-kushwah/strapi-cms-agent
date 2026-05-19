@@ -79,9 +79,13 @@ def extract_buttons(soup: BeautifulSoup | Tag) -> list[dict[str, str]]:
     buttons: list[dict[str, str]] = []
     for button in soup.find_all(["a", "button"]):
         text = clean_text(button.get_text(" "))
-        href = clean_text(button.get("href"))
-        if text:
-            buttons.append({"text": text, "href": href})
+        if not text:
+            continue
+
+        if button.name == "a":
+            buttons.append({"text": text, "type": "link", "href": clean_text(button.get("href"))})
+        else:
+            buttons.append({"text": text, "type": clean_text(button.get("type") or "button")})
     return buttons
 
 
