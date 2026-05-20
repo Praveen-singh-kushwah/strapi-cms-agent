@@ -285,6 +285,7 @@ def validate_llm_plan_content(content: str) -> CmsPlan:
     payload = json.loads(content)
     repair_page_identity(payload)
     repair_component_uids(payload)
+    repair_section_attribute_names(payload)
     add_missing_seo_attribute(payload)
 
     try:
@@ -395,6 +396,52 @@ def repair_component_references(items: Any, replacements: dict[str, str]) -> Non
         component = item.get("component")
         if component in replacements:
             item["component"] = replacements[component]
+
+
+def repair_section_attribute_names(payload: dict[str, Any]) -> None:
+    attributes = payload.get("singleTypeAttributes", [])
+    seed_data = payload.get("seedData", {})
+    if not isinstance(attributes, list) or not isinstance(seed_data, dict):
+        return
+
+    canonical_names = {"hero", "features", "testimonials", "pricing", "faq", "contact"}
+    existing_names = {
+        attribute.get("name")
+        for attribute in attributes
+        if isinstance(attribute, dict) and isinstance(attribute.get("name"), str)
+    }
+    replacements = {}
+
+    for attribute in attributes:
+        if not isinstance(attribute, dict):
+            continue
+        name = attribute.get("name")
+        if not isinstance(name, str) or not name.endswith("_section"):
+            continue
+
+        candidate = name.removesuffix("_section")
+        if candidate not in canonical_names:
+            continue
+        if candidate in existing_names:
+            continue
+
+        attribute["name"] = candidate
+        replacements[name] = candidate
+        existing_names.discard(name)
+        existing_names.add(candidate)
+
+    if not replacements:
+        return
+
+    for old_name, new_name in replacements.items():
+        if old_name in seed_data and new_name not in seed_data:
+            seed_data[new_name] = seed_data.pop(old_name)
+
+    payload.setdefault("warnings", [])
+    payload["warnings"].append(
+        "Repaired section attribute names to match canonical seedData keys: "
+        + ", ".join(f"{old} -> {new}" for old, new in sorted(replacements.items()))
+    )
 
 
 def llm_model_identity_names() -> set[str]:

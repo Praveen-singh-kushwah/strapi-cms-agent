@@ -28,6 +28,7 @@ PageKind = Literal["singleType"]
 SNAKE_CASE_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
 KEBAB_CASE_PATTERN = re.compile(r"^[a-z][a-z0-9-]*$")
 UID_PATTERN = re.compile(r"^[a-z][a-z0-9-]*\.[a-z][a-z0-9-]*$")
+KNOWN_SHARED_COMPONENT_UIDS = {"shared.link", "shared.seo", "shared.text-item"}
 
 
 class StrictBaseModel(BaseModel):
@@ -263,7 +264,7 @@ class CmsPlan(StrictBaseModel):
         if len(component_uids) != len(set(component_uids)):
             raise ValueError("component UIDs must be unique")
 
-        available_components = set(component_uids) | {"shared.link", "shared.seo"}
+        available_components = set(component_uids) | KNOWN_SHARED_COMPONENT_UIDS
         for component in self.components:
             for field in component.fields:
                 if field.component and field.component not in available_components:
