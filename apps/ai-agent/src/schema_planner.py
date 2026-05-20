@@ -14,6 +14,7 @@ from typing import Any, TypedDict
 
 from dotenv import load_dotenv
 from openai import OpenAI
+from pydantic import ValidationError
 
 from src.schema_models import (
     CmsPlan,
@@ -77,6 +78,7 @@ def build_section_planner_prompt(
     """Build the strict prompt that the future LLM planner should receive."""
     context = resolve_planner_context(planner_context)
     prompt_analysis = compact_html_analysis(html_analysis) if context.get("compactInput") else html_analysis
+    public_context = public_planner_context(context)
     return f"""You are a Strapi CMS architect.
 
 You will receive structured HTML section analysis from a deterministic parser.
@@ -100,14 +102,36 @@ Rules:
 - Use boolean fields for flags such as isHighlighted.
 - Preserve section order.
 - Do not hallucinate content not present in the input.
+- Planner context is configuration only. Never use model/provider names as CMS page names or content.
+- Derive pageModel only from the HTML page title and section content.
+- Only create singleTypeAttributes and seedData entries for sections present in candidateSections.
+- If candidateSections contains a subset of the page, do not infer missing page sections from the title or global blocks.
+- seedData keys must exactly match singleTypeAttributes names. Use null for optional seed sections that are not attributes.
 - Include warnings when uncertain.
 
 Planner context:
-{json.dumps(context, indent=2)}
+{json.dumps(public_context, indent=2)}
 
 HTML analysis:
 {json.dumps(prompt_analysis, indent=2)}
 """
+
+
+def public_planner_context(context: dict[str, Any]) -> dict[str, Any]:
+    """Expose only CMS planning settings to the LLM.
+
+    Runtime details such as the LLM model name are useful to Python, but they can
+    confuse the planner into treating the model name as page content.
+    """
+    allowed_keys = (
+        "cms",
+        "strapiVersion",
+        "target",
+        "componentCategoryPrefix",
+        "namingStyle",
+        "reuseSharedComponents",
+    )
+    return {key: context[key] for key in allowed_keys if key in context}
 
 
 def compact_html_analysis(html_analysis: dict[str, Any]) -> dict[str, Any]:
@@ -246,7 +270,182 @@ def generate_openrouter_cms_plan(
             f"(finish_reason={choice.finish_reason}, message={choice.message.model_dump()})"
         )
 
-    return CmsPlan.model_validate_json(content)
+    return validate_llm_plan_content(content)
+
+
+def validate_llm_plan_content(content: str) -> CmsPlan:
+    """Validate LLM JSON and repair small shape issues when safe.
+
+    The LLM can occasionally include seed entries for sections it inferred but
+    did not actually add as single type attributes. Those keys cannot be used by
+    the Strapi generator, so we drop them and preserve the issue as a warning.
+    It can also emit SEO seed data while forgetting the matching SEO attribute;
+    in that case, adding the missing attribute is deterministic and safe.
+    """
+    payload = json.loads(content)
+    repair_page_identity(payload)
+    repair_component_uids(payload)
+    add_missing_seo_attribute(payload)
+
+    try:
+        return CmsPlan.model_validate(payload)
+    except ValidationError as exc:
+        if "seedData has keys not present in attributes" not in str(exc):
+            raise
+
+        attribute_names = single_type_attribute_names(payload)
+        seed_data = payload.get("seedData", {})
+        if not isinstance(seed_data, dict):
+            raise
+
+        removed_keys = sorted(set(seed_data) - attribute_names)
+        if not removed_keys:
+            raise
+
+        payload["seedData"] = {
+            key: value
+            for key, value in seed_data.items()
+            if key in attribute_names
+        }
+        payload.setdefault("warnings", [])
+        payload["warnings"].append(
+            "Removed seedData keys that were not present in singleTypeAttributes: "
+            + ", ".join(removed_keys)
+        )
+        return CmsPlan.model_validate(payload)
+
+
+def repair_page_identity(payload: dict[str, Any]) -> None:
+    page_model = payload.get("pageModel", {})
+    if not isinstance(page_model, dict):
+        return
+
+    suspicious_names = llm_model_identity_names()
+    page_values = {
+        str(page_model.get("apiName", "")).lower(),
+        str(page_model.get("displayName", "")).lower(),
+        str(page_model.get("singularName", "")).lower(),
+        str(page_model.get("pluralName", "")).lower(),
+    }
+    if not suspicious_names.intersection(page_values):
+        return
+
+    page_model.update(
+        {
+            "kind": "singleType",
+            "apiName": "landing-page",
+            "displayName": "Landing Page",
+            "singularName": "landing-page",
+            "pluralName": "landing-pages",
+            "description": "CMS single type for the landing page.",
+        }
+    )
+    payload.setdefault("warnings", [])
+    payload["warnings"].append("Repaired pageModel because it used the LLM model name as the page identity.")
+
+
+def repair_component_uids(payload: dict[str, Any]) -> None:
+    components = payload.get("components", [])
+    if not isinstance(components, list):
+        return
+
+    replacements = {}
+    for component in components:
+        if not isinstance(component, dict):
+            continue
+        uid = component.get("uid")
+        category = component.get("category")
+        file_name = component.get("fileName")
+        if not all(isinstance(value, str) for value in (uid, category, file_name)):
+            continue
+        if "." in uid:
+            continue
+
+        expected_prefix = f"{category}-"
+        if uid.startswith(expected_prefix):
+            replacements[uid] = f"{category}.{uid.removeprefix(expected_prefix)}"
+        else:
+            replacements[uid] = f"{category}.{file_name}"
+
+    if not replacements:
+        return
+
+    for component in components:
+        if not isinstance(component, dict):
+            continue
+        if component.get("uid") in replacements:
+            component["uid"] = replacements[component["uid"]]
+        repair_component_references(component.get("fields", []), replacements)
+
+    repair_component_references(payload.get("singleTypeAttributes", []), replacements)
+    payload.setdefault("warnings", [])
+    payload["warnings"].append(
+        "Repaired component UIDs to category.component-name format: "
+        + ", ".join(f"{old} -> {new}" for old, new in sorted(replacements.items()))
+    )
+
+
+def repair_component_references(items: Any, replacements: dict[str, str]) -> None:
+    if not isinstance(items, list):
+        return
+
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        component = item.get("component")
+        if component in replacements:
+            item["component"] = replacements[component]
+
+
+def llm_model_identity_names() -> set[str]:
+    names = set()
+    for value in (
+        os.getenv("MODEL_NAME", ""),
+        os.getenv("OPENROUTER_MODEL_NAME", ""),
+        DEFAULT_PLANNER_CONTEXT["modelName"],
+        DEFAULT_PLANNER_CONTEXT["openRouterModelName"],
+    ):
+        if not value:
+            continue
+        raw = value.rsplit("/", 1)[-1].replace("~", "")
+        names.add(raw.lower())
+        names.add(slugify(raw))
+        names.add(raw.replace("-", " ").replace("_", " ").title().lower())
+    return names
+
+
+def add_missing_seo_attribute(payload: dict[str, Any]) -> None:
+    seed_data = payload.get("seedData", {})
+    if not isinstance(seed_data, dict) or "seo" not in seed_data:
+        return
+
+    if "seo" in single_type_attribute_names(payload):
+        return
+
+    attributes = payload.setdefault("singleTypeAttributes", [])
+    if not isinstance(attributes, list):
+        return
+
+    attributes.insert(
+        0,
+        {
+            "name": "seo",
+            "type": "component",
+            "component": "shared.seo",
+            "repeatable": False,
+            "sourceSectionIndex": None,
+        },
+    )
+    payload.setdefault("warnings", [])
+    payload["warnings"].append("Added missing seo singleTypeAttribute for seedData.seo.")
+
+
+def single_type_attribute_names(payload: dict[str, Any]) -> set[str]:
+    return {
+        attribute.get("name")
+        for attribute in payload.get("singleTypeAttributes", [])
+        if isinstance(attribute, dict) and isinstance(attribute.get("name"), str)
+    }
 
 
 def openrouter_response_format(context: dict[str, Any]) -> dict[str, Any]:
