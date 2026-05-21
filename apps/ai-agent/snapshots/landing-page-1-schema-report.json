@@ -1,0 +1,160 @@
+{
+  "isValid": true,
+  "usedLLM": false,
+  "planValidation": {
+    "isValid": true,
+    "errors": [],
+    "warnings": [],
+    "summary": {
+      "pageApiName": "landing-page",
+      "componentCount": 13,
+      "singleTypeAttributeCount": 7,
+      "seedDataKeyCount": 7,
+      "componentUids": [
+        "landing-page.hero",
+        "landing-page.features",
+        "landing-page.feature-card",
+        "landing-page.testimonials",
+        "landing-page.testimonial-card",
+        "landing-page.pricing",
+        "landing-page.pricing-card",
+        "landing-page.pricing-feature",
+        "landing-page.faq",
+        "landing-page.faq-item",
+        "landing-page.contact",
+        "landing-page.form-config",
+        "landing-page.form-field"
+      ],
+      "singleTypeAttributes": [
+        "seo",
+        "hero",
+        "features",
+        "testimonials",
+        "pricing",
+        "faq",
+        "contact"
+      ],
+      "seedDataKeys": [
+        "seo",
+        "hero",
+        "features",
+        "testimonials",
+        "pricing",
+        "faq",
+        "contact"
+      ]
+    }
+  },
+  "writeReport": {
+    "fileCount": 16,
+    "files": [
+      {
+        "kind": "contentType",
+        "uid": "landing-page",
+        "path": "src/api/landing-page/content-types/landing-page/schema.json"
+      },
+      {
+        "kind": "component",
+        "uid": "landing-page.hero",
+        "path": "src/components/landing-page/hero.json"
+      },
+      {
+        "kind": "component",
+        "uid": "landing-page.features",
+        "path": "src/components/landing-page/features.json"
+      },
+      {
+        "kind": "component",
+        "uid": "landing-page.feature-card",
+        "path": "src/components/landing-page/feature-card.json"
+      },
+      {
+        "kind": "component",
+        "uid": "landing-page.testimonials",
+        "path": "src/components/landing-page/testimonials.json"
+      },
+      {
+        "kind": "component",
+        "uid": "landing-page.testimonial-card",
+        "path": "src/components/landing-page/testimonial-card.json"
+      },
+      {
+        "kind": "component",
+        "uid": "landing-page.pricing",
+        "path": "src/components/landing-page/pricing.json"
+      },
+      {
+        "kind": "component",
+        "uid": "landing-page.pricing-card",
+        "path": "src/components/landing-page/pricing-card.json"
+      },
+      {
+        "kind": "component",
+        "uid": "landing-page.pricing-feature",
+        "path": "src/components/landing-page/pricing-feature.json"
+      },
+      {
+        "kind": "component",
+        "uid": "landing-page.faq",
+        "path": "src/components/landing-page/faq.json"
+      },
+      {
+        "kind": "component",
+        "uid": "landing-page.faq-item",
+        "path": "src/components/landing-page/faq-item.json"
+      },
+      {
+        "kind": "component",
+        "uid": "landing-page.contact",
+        "path": "src/components/landing-page/contact.json"
+      },
+      {
+        "kind": "component",
+        "uid": "landing-page.form-config",
+        "path": "src/components/landing-page/form-config.json"
+      },
+      {
+        "kind": "component",
+        "uid": "landing-page.form-field",
+        "path": "src/components/landing-page/form-field.json"
+      },
+      {
+        "kind": "component",
+        "uid": "shared.link",
+        "path": "src/components/shared/link.json"
+      },
+      {
+        "kind": "component",
+        "uid": "shared.seo",
+        "path": "src/components/shared/seo.json"
+      }
+    ]
+  },
+  "generatedValidation": {
+    "isValid": true,
+    "errors": [],
+    "warnings": [],
+    "summary": {
+      "fileCount": 16,
+      "files": [
+        "src/api/landing-page/content-types/landing-page/schema.json",
+        "src/components/landing-page/contact.json",
+        "src/components/landing-page/faq-item.json",
+        "src/components/landing-page/faq.json",
+        "src/components/landing-page/feature-card.json",
+        "src/components/landing-page/features.json",
+        "src/components/landing-page/form-config.json",
+        "src/components/landing-page/form-field.json",
+        "src/components/landing-page/hero.json",
+        "src/components/landing-page/pricing-card.json",
+        "src/components/landing-page/pricing-feature.json",
+        "src/components/landing-page/pricing.json",
+        "src/components/landing-page/testimonial-card.json",
+        "src/components/landing-page/testimonials.json",
+        "src/components/shared/link.json",
+        "src/components/shared/seo.json"
+      ]
+    }
+  },
+  "errors": []
+}

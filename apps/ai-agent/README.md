@@ -71,3 +71,15 @@ Generated schema files are written under:
 ```text
 generated/strapi/
 ```
+
+To compare current generated schema output against the saved reference snapshot:
+
+```powershell
+python -m src.check_schema_snapshot notebooks/sample-html/landing-page-1.html
+```
+
+If the intended schema output changes, update the snapshot with:
+
+```powershell
+python -m src.check_schema_snapshot notebooks/sample-html/landing-page-1.html --update
+```
