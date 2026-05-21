@@ -300,6 +300,7 @@ def validate_llm_plan_content(content: str) -> CmsPlan:
         raise ValueError("LLM planner response must be a JSON object")
 
     repair_page_identity(payload)
+    repair_component_file_names(payload)
     repair_component_uids(payload)
     repair_section_attribute_names(payload)
     repair_dynamic_sections_attribute(payload)
@@ -400,6 +401,33 @@ def repair_component_uids(payload: dict[str, Any]) -> None:
         "Repaired component UIDs to category.component-name format: "
         + ", ".join(f"{old} -> {new}" for old, new in sorted(replacements.items())),
     )
+
+
+def repair_component_file_names(payload: dict[str, Any]) -> None:
+    components = payload.get("components")
+    if not isinstance(components, list):
+        return
+
+    replacements = {}
+    for component in components:
+        if not isinstance(component, dict):
+            continue
+
+        file_name = component.get("fileName")
+        if not isinstance(file_name, str) or not file_name:
+            continue
+
+        normalized = slugify(file_name.removesuffix(".json"))
+        if normalized and normalized != file_name:
+            component["fileName"] = normalized
+            replacements[file_name] = normalized
+
+    if replacements:
+        append_warning(
+            payload,
+            "Repaired component fileName values to kebab-case names without extensions: "
+            + ", ".join(f"{old} -> {new}" for old, new in sorted(replacements.items())),
+        )
 
 
 def repair_component_references(items: Any, replacements: dict[str, str]) -> None:
