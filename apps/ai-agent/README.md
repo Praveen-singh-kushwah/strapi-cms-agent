@@ -47,3 +47,9 @@ Run from this directory:
 .\.venv\Scripts\Activate.ps1
 python -c "from src.section_detector import analyze_html_file; from src.schema_planner import llm_section_planner_node; a=analyze_html_file('notebooks/sample-html/landing-page-1.html'); s=llm_section_planner_node({'html_analysis': a, 'errors': []}); print(s.get('errors') or s['cms_plan'])"
 ```
+
+To generate a validation report for the plan:
+
+```powershell
+python -c "from src.section_detector import analyze_html_file; from src.schema_planner import llm_section_planner_node; from src.schema_validator import validate_cms_plan; import json; a=analyze_html_file('notebooks/sample-html/landing-page-1.html'); s=llm_section_planner_node({'html_analysis': a, 'errors': []}); print(json.dumps(s.get('errors') or validate_cms_plan(s['cms_plan']), indent=2))"
+```
