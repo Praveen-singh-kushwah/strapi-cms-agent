@@ -304,6 +304,7 @@ def validate_llm_plan_content(content: str) -> CmsPlan:
     repair_component_uids(payload)
     repair_section_attribute_names(payload)
     repair_dynamic_sections_attribute(payload)
+    repair_generic_component_references(payload)
     add_missing_seo_attribute(payload)
 
     try:
@@ -440,6 +441,130 @@ def repair_component_references(items: Any, replacements: dict[str, str]) -> Non
         component = item.get("component")
         if component in replacements:
             item["component"] = replacements[component]
+
+
+def repair_generic_component_references(payload: dict[str, Any]) -> None:
+    components = payload.get("components")
+    if not isinstance(components, list):
+        return
+
+    replacements = []
+    for component in components:
+        if not isinstance(component, dict):
+            continue
+        parent_uid = component.get("uid") if isinstance(component.get("uid"), str) else ""
+        fields = component.get("fields")
+        if not isinstance(fields, list):
+            continue
+        for field in fields:
+            repaired = repair_component_reference_item(field, parent_uid, components)
+            if repaired:
+                replacements.append(repaired)
+
+    attributes = payload.get("singleTypeAttributes")
+    if isinstance(attributes, list):
+        for attribute in attributes:
+            repaired = repair_component_reference_item(attribute, "", components)
+            if repaired:
+                replacements.append(repaired)
+
+    if replacements:
+        append_warning(
+            payload,
+            "Repaired generic component references: "
+            + ", ".join(f"{name} -> {component}" for name, component in replacements),
+        )
+
+
+def repair_component_reference_item(
+    item: Any,
+    parent_uid: str,
+    components: list[Any],
+) -> tuple[str, str] | None:
+    if not isinstance(item, dict) or item.get("type") != "component":
+        return None
+
+    name = item.get("name")
+    if not isinstance(name, str) or not name:
+        return None
+
+    current = item.get("component")
+    if isinstance(current, str) and current in available_component_uids(components):
+        return None
+
+    if current not in (None, "", "component", "components", "item", "items", "section"):
+        return None
+
+    inferred = infer_component_reference(name, parent_uid, components)
+    if not inferred:
+        return None
+
+    item["component"] = inferred
+    return name, inferred
+
+
+def infer_component_reference(name: str, parent_uid: str, components: list[Any]) -> str | None:
+    normalized_name = name.lower()
+    normalized_parent = parent_uid.lower()
+
+    if normalized_name in {"seo"}:
+        return "shared.seo"
+    if "cta" in normalized_name or "link" in normalized_name or "button" in normalized_name:
+        return "shared.link"
+    if "faq" in normalized_name:
+        return find_component_uid_by_aliases(components, {"faq-item", "item-faq"})
+    if "testimonial" in normalized_name:
+        return find_component_uid_by_aliases(components, {"testimonial-card", "testimonial-item"})
+    if "pricing" in normalized_name:
+        return find_component_uid_by_aliases(components, {"pricing-card", "pricing-item"})
+    if "feature" in normalized_name:
+        return find_component_uid_by_aliases(components, {"feature-card", "feature-item"})
+    if "form" in normalized_name and "field" in normalized_name:
+        return find_component_uid_by_aliases(components, {"form-field"})
+    if normalized_name == "form":
+        return find_component_uid_by_aliases(components, {"form-config", "contact-form"})
+    if normalized_name in {"fields"} and "form" in normalized_parent:
+        return find_component_uid_by_aliases(components, {"form-field"})
+    if normalized_name in {"features", "bullet_points", "bullets"} and "pricing" in normalized_parent:
+        return find_component_uid_by_aliases(components, {"pricing-feature", "text-item"}) or "shared.text-item"
+    if normalized_name in {"items", "cards"}:
+        if "feature" in normalized_parent:
+            return find_component_uid_by_aliases(components, {"feature-card", "feature-item"})
+        if "testimonial" in normalized_parent:
+            return find_component_uid_by_aliases(components, {"testimonial-card", "testimonial-item"})
+        if "pricing" in normalized_parent:
+            return find_component_uid_by_aliases(components, {"pricing-card", "pricing-item"})
+        if "faq" in normalized_parent:
+            return find_component_uid_by_aliases(components, {"faq-item"})
+
+    return find_section_component_uid(components, normalized_name)
+
+
+def available_component_uids(components: list[Any]) -> set[str]:
+    return {
+        component.get("uid")
+        for component in components
+        if isinstance(component, dict) and isinstance(component.get("uid"), str)
+    } | {"shared.link", "shared.seo", "shared.text-item"}
+
+
+def find_component_uid_by_aliases(components: list[Any], aliases: set[str]) -> str | None:
+    for component in components:
+        if not isinstance(component, dict):
+            continue
+        uid = component.get("uid")
+        if not isinstance(uid, str) or not uid:
+            continue
+        file_name = component.get("fileName")
+        display_name = component.get("displayName")
+        candidates = {
+            uid.rsplit(".", 1)[-1],
+            str(file_name or ""),
+            slugify(str(display_name or "")),
+        }
+        if candidates.intersection(aliases):
+            return uid
+    return None
 
 
 def repair_section_attribute_names(payload: dict[str, Any]) -> None:
