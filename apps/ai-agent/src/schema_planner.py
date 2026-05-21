@@ -302,6 +302,7 @@ def validate_llm_plan_content(content: str) -> CmsPlan:
     repair_page_identity(payload)
     repair_component_uids(payload)
     repair_section_attribute_names(payload)
+    repair_dynamic_sections_attribute(payload)
     add_missing_seo_attribute(payload)
 
     try:
@@ -457,6 +458,113 @@ def repair_section_attribute_names(payload: dict[str, Any]) -> None:
         "Repaired section attribute names to match canonical seedData keys: "
         + ", ".join(f"{old} -> {new}" for old, new in sorted(replacements.items())),
     )
+
+
+def repair_dynamic_sections_attribute(payload: dict[str, Any]) -> None:
+    """Convert generic title/description/sections page models to canonical fields.
+
+    Some LLMs prefer a dynamic-zone-like `sections` attribute. For this MVP our
+    seed data and generator contract are keyed by semantic section names, so we
+    normalize that shape before seed keys are compared with attributes.
+    """
+    attributes = payload.get("singleTypeAttributes")
+    seed_data = payload.get("seedData")
+    components = payload.get("components")
+    if not isinstance(attributes, list) or not isinstance(seed_data, dict) or not isinstance(components, list):
+        return
+
+    attribute_names = {
+        attribute.get("name")
+        for attribute in attributes
+        if isinstance(attribute, dict) and isinstance(attribute.get("name"), str)
+    }
+    canonical_names = ("hero", "features", "testimonials", "pricing", "faq", "contact")
+    section_seed_names = [name for name in canonical_names if seed_data.get(name) is not None]
+    if "sections" not in attribute_names or not section_seed_names:
+        return
+
+    kept_attributes = [
+        attribute
+        for attribute in attributes
+        if isinstance(attribute, dict)
+        and attribute.get("name") not in {"title", "description", "sections"}
+        and attribute.get("name") not in section_seed_names
+    ]
+
+    added_attributes = []
+    for section_name in section_seed_names:
+        component_uid = find_section_component_uid(components, section_name)
+        if not component_uid:
+            continue
+        added_attributes.append(
+            {
+                "name": section_name,
+                "type": "component",
+                "component": component_uid,
+                "repeatable": False,
+                "sourceSectionIndex": section_source_index(section_name),
+            }
+        )
+
+    if not added_attributes:
+        return
+
+    payload["singleTypeAttributes"] = kept_attributes + added_attributes
+    append_warning(
+        payload,
+        "Repaired generic sections attribute into canonical section attributes: "
+        + ", ".join(attribute["name"] for attribute in added_attributes),
+    )
+
+
+def find_section_component_uid(components: list[Any], section_name: str) -> str | None:
+    aliases = section_component_aliases(section_name)
+
+    for component in components:
+        if not isinstance(component, dict):
+            continue
+        uid = component.get("uid")
+        if not isinstance(uid, str) or not uid:
+            continue
+        file_name = component.get("fileName")
+        display_name = component.get("displayName")
+        candidates = [
+            uid.rsplit(".", 1)[-1],
+            str(file_name or ""),
+            slugify(str(display_name or "")),
+        ]
+        if any(candidate in aliases for candidate in candidates):
+            return uid
+
+    return None
+
+
+def section_component_aliases(section_name: str) -> set[str]:
+    singular = {
+        "features": "feature",
+        "testimonials": "testimonial",
+    }.get(section_name, section_name)
+
+    return {
+        section_name,
+        singular,
+        f"{section_name}-section",
+        f"{singular}-section",
+        f"section-{section_name}",
+        f"section-{singular}",
+    }
+
+
+def section_source_index(section_name: str) -> int | None:
+    source_indexes = {
+        "hero": 1,
+        "features": 2,
+        "testimonials": 3,
+        "pricing": 4,
+        "faq": 5,
+        "contact": 6,
+    }
+    return source_indexes.get(section_name)
 
 
 def llm_model_identity_names() -> set[str]:
