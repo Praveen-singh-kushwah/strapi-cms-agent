@@ -168,8 +168,6 @@ class HeroSeed(StrictBaseModel):
 class FeatureCardSeed(StrictBaseModel):
     title: str = ""
     description: str = ""
-    image: ImageSeed | None = None
-    cta: LinkSeed | None = None
 
 
 class ItemsSectionSeed(StrictBaseModel):

@@ -51,6 +51,38 @@ DEFAULT_PLANNER_CONTEXT = {
     "useLLM": "auto",
 }
 
+CANONICAL_SECTION_NAMES = ("hero", "features", "testimonials", "pricing", "faq", "contact")
+CANONICAL_SECTION_SOURCE_INDEXES = {
+    "hero": 1,
+    "features": 2,
+    "testimonials": 3,
+    "pricing": 4,
+    "faq": 5,
+    "contact": 6,
+}
+CANONICAL_COMPONENT_ALIASES = {
+    "hero": {"hero", "hero-section", "section-hero"},
+    "features": {"features", "feature", "features-section", "feature-section", "section-features", "section-feature"},
+    "feature-card": {"feature-card", "feature-item", "features-card", "features-item"},
+    "testimonials": {
+        "testimonials",
+        "testimonial",
+        "testimonials-section",
+        "testimonial-section",
+        "section-testimonials",
+        "section-testimonial",
+    },
+    "testimonial-card": {"testimonial-card", "testimonial-item"},
+    "pricing": {"pricing", "pricing-section", "section-pricing"},
+    "pricing-card": {"pricing-card", "pricing-item", "plan-card", "plan-item"},
+    "pricing-feature": {"pricing-feature", "pricing-bullet", "pricing-bullets"},
+    "faq": {"faq", "faq-section", "section-faq"},
+    "faq-item": {"faq-item", "question-answer", "question-answer-item"},
+    "contact": {"contact", "contact-section", "section-contact"},
+    "form-config": {"form-config", "contact-form", "form"},
+    "form-field": {"form-field", "input-field"},
+}
+
 
 def llm_section_planner_node(state: AgentState) -> AgentState:
     """LangGraph-compatible node shape for section planning.
@@ -305,6 +337,7 @@ def validate_llm_plan_content(content: str) -> CmsPlan:
     repair_section_attribute_names(payload)
     repair_dynamic_sections_attribute(payload)
     repair_generic_component_references(payload)
+    repair_canonical_contract(payload)
     add_missing_seo_attribute(payload)
 
     try:
@@ -567,13 +600,460 @@ def find_component_uid_by_aliases(components: list[Any], aliases: set[str]) -> s
     return None
 
 
+def repair_canonical_contract(payload: dict[str, Any]) -> None:
+    """Normalize common LLM variants into the MVP CMS plan contract."""
+    components = payload.get("components")
+    if not isinstance(components, list):
+        normalize_seed_data_shape(payload)
+        return
+
+    replacements = canonicalize_component_names(payload)
+    if replacements:
+        for component in components:
+            if isinstance(component, dict):
+                repair_component_references(component.get("fields", []), replacements)
+        repair_component_references(payload.get("singleTypeAttributes", []), replacements)
+        append_warning(
+            payload,
+            "Normalized component names to canonical CMS contract: "
+            + ", ".join(f"{old} -> {new}" for old, new in sorted(replacements.items())),
+        )
+
+    ensure_canonical_nested_components(payload)
+    canonicalize_component_fields(payload)
+    dedupe_components_by_uid(payload)
+    normalize_seed_data_shape(payload)
+
+
+def canonicalize_component_names(payload: dict[str, Any]) -> dict[str, str]:
+    components = payload.get("components")
+    if not isinstance(components, list):
+        return {}
+
+    replacements = {}
+    for component in components:
+        if not isinstance(component, dict):
+            continue
+
+        canonical_name = canonical_component_name(component)
+        if not canonical_name:
+            continue
+
+        category = component.get("category")
+        if not isinstance(category, str) or not category:
+            category = "landing-page"
+            component["category"] = category
+
+        old_uid = component.get("uid")
+        new_uid = f"{category}.{canonical_name}"
+        component["uid"] = new_uid
+        component["fileName"] = canonical_name
+        component["displayName"] = canonical_display_name(canonical_name)
+
+        if isinstance(old_uid, str) and old_uid != new_uid:
+            replacements[old_uid] = new_uid
+
+    return replacements
+
+
+def canonical_component_name(component: dict[str, Any]) -> str | None:
+    candidates = {
+        slugify(str(component.get("fileName") or "")),
+        slugify(str(component.get("displayName") or "")),
+    }
+    uid = component.get("uid")
+    if isinstance(uid, str) and uid:
+        candidates.add(slugify(uid.rsplit(".", 1)[-1]))
+
+    for canonical_name, aliases in CANONICAL_COMPONENT_ALIASES.items():
+        if candidates.intersection(aliases):
+            return canonical_name
+
+    return None
+
+
+def canonical_display_name(file_name: str) -> str:
+    display_names = {
+        "faq": "FAQ",
+        "faq-item": "FAQ Item",
+    }
+    return display_names.get(file_name, " ".join(part.capitalize() for part in file_name.split("-")))
+
+
+def ensure_canonical_nested_components(payload: dict[str, Any]) -> None:
+    components = payload.get("components")
+    if not isinstance(components, list):
+        return
+
+    category = landing_page_component_category(components)
+    required = set()
+    existing = {
+        component.get("uid")
+        for component in components
+        if isinstance(component, dict) and isinstance(component.get("uid"), str)
+    }
+
+    for component in components:
+        if not isinstance(component, dict):
+            continue
+        suffix = component_suffix(component)
+        if suffix == "features":
+            required.add("feature-card")
+        elif suffix == "testimonials":
+            required.add("testimonial-card")
+        elif suffix == "pricing":
+            required.update({"pricing-card", "pricing-feature"})
+        elif suffix == "pricing-card":
+            required.add("pricing-feature")
+        elif suffix == "faq":
+            required.add("faq-item")
+        elif suffix == "contact":
+            required.update({"form-config", "form-field"})
+        elif suffix == "form-config":
+            required.add("form-field")
+
+    added = []
+    for file_name in sorted(required):
+        uid = f"{category}.{file_name}"
+        if uid in existing:
+            continue
+        components.append(
+            {
+                "uid": uid,
+                "category": category,
+                "displayName": canonical_display_name(file_name),
+                "fileName": file_name,
+                "fields": canonical_component_fields(file_name, category),
+            }
+        )
+        existing.add(uid)
+        added.append(uid)
+
+    if added:
+        append_warning(
+            payload,
+            "Added missing nested components required by the canonical CMS contract: "
+            + ", ".join(added),
+        )
+
+
+def canonicalize_component_fields(payload: dict[str, Any]) -> None:
+    components = payload.get("components")
+    if not isinstance(components, list):
+        return
+
+    changed = []
+    for component in components:
+        if not isinstance(component, dict):
+            continue
+        file_name = component_suffix(component)
+        fields = canonical_component_fields(file_name, component.get("category") or "landing-page")
+        if not fields:
+            continue
+        if component.get("fields") != fields:
+            component["fields"] = fields
+            changed.append(component.get("uid", file_name))
+
+    if changed:
+        append_warning(
+            payload,
+            "Normalized component fields to the canonical CMS contract: "
+            + ", ".join(str(value) for value in changed),
+        )
+
+
+def canonical_component_fields(file_name: str, category: str) -> list[dict[str, Any]]:
+    if file_name == "hero":
+        return [
+            field_plan("eyebrow", "string"),
+            field_plan("title", "string", required=True),
+            field_plan("description", "text"),
+            field_plan("primary_cta", "component", component="shared.link", repeatable=False),
+            field_plan("secondary_cta", "component", component="shared.link", repeatable=False),
+            field_plan("image", "media", multiple=False, allowedTypes=["images"]),
+        ]
+    if file_name == "features":
+        return [
+            field_plan("title", "string", required=True),
+            field_plan("description", "text"),
+            field_plan("items", "component", component=f"{category}.feature-card", repeatable=True),
+        ]
+    if file_name == "feature-card":
+        return [
+            field_plan("title", "string", required=True),
+            field_plan("description", "text"),
+        ]
+    if file_name == "testimonials":
+        return [
+            field_plan("title", "string", required=True),
+            field_plan("description", "text"),
+            field_plan("items", "component", component=f"{category}.testimonial-card", repeatable=True),
+        ]
+    if file_name == "testimonial-card":
+        return [
+            field_plan("quote", "text", required=True),
+            field_plan("author_name", "string"),
+            field_plan("author_role", "string"),
+        ]
+    if file_name == "pricing":
+        return [
+            field_plan("title", "string", required=True),
+            field_plan("description", "text"),
+            field_plan("items", "component", component=f"{category}.pricing-card", repeatable=True),
+        ]
+    if file_name == "pricing-card":
+        return [
+            field_plan("title", "string", required=True),
+            field_plan("price", "string"),
+            field_plan("description", "text"),
+            field_plan("features", "component", component=f"{category}.pricing-feature", repeatable=True),
+            field_plan("is_highlighted", "boolean"),
+        ]
+    if file_name == "pricing-feature":
+        return [
+            field_plan("text", "string", required=True),
+        ]
+    if file_name == "faq":
+        return [
+            field_plan("title", "string", required=True),
+            field_plan("description", "text"),
+            field_plan("items", "component", component=f"{category}.faq-item", repeatable=True),
+        ]
+    if file_name == "faq-item":
+        return [
+            field_plan("question", "string", required=True),
+            field_plan("answer", "text", required=True),
+        ]
+    if file_name == "contact":
+        return [
+            field_plan("title", "string", required=True),
+            field_plan("description", "text"),
+            field_plan("form", "component", component=f"{category}.form-config", repeatable=False),
+        ]
+    if file_name == "form-config":
+        return [
+            field_plan("action", "string"),
+            field_plan("method", "string"),
+            field_plan("submit_label", "string"),
+            field_plan("fields", "component", component=f"{category}.form-field", repeatable=True),
+        ]
+    if file_name == "form-field":
+        return [
+            field_plan("label", "string"),
+            field_plan("name", "string", required=True),
+            field_plan("input_type", "string"),
+            field_plan("required", "boolean"),
+        ]
+    return []
+
+
+def field_plan(
+    name: str,
+    field_type: str,
+    required: bool = False,
+    component: str | None = None,
+    repeatable: bool | None = None,
+    multiple: bool | None = None,
+    allowedTypes: list[str] | None = None,
+) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        "name": name,
+        "type": field_type,
+        "required": required,
+    }
+    if component is not None:
+        result["component"] = component
+    if repeatable is not None:
+        result["repeatable"] = repeatable
+    if multiple is not None:
+        result["multiple"] = multiple
+    if allowedTypes is not None:
+        result["allowedTypes"] = allowedTypes
+    return result
+
+
+def landing_page_component_category(components: list[Any]) -> str:
+    for component in components:
+        if not isinstance(component, dict):
+            continue
+        category = component.get("category")
+        if isinstance(category, str) and category and category != "shared":
+            return category
+    return "landing-page"
+
+
+def component_suffix(component: dict[str, Any]) -> str:
+    uid = component.get("uid")
+    if isinstance(uid, str) and "." in uid:
+        return uid.rsplit(".", 1)[-1]
+    return slugify(str(component.get("fileName") or ""))
+
+
+def dedupe_components_by_uid(payload: dict[str, Any]) -> None:
+    components = payload.get("components")
+    if not isinstance(components, list):
+        return
+
+    result = []
+    seen = set()
+    removed = []
+    for component in components:
+        if not isinstance(component, dict):
+            continue
+        uid = component.get("uid")
+        if not isinstance(uid, str) or uid not in seen:
+            result.append(component)
+            if isinstance(uid, str):
+                seen.add(uid)
+            continue
+        removed.append(uid)
+
+    if removed:
+        payload["components"] = result
+        append_warning(payload, "Removed duplicate components after canonical normalization: " + ", ".join(removed))
+
+
+def normalize_seed_data_shape(payload: dict[str, Any]) -> None:
+    seed_data = payload.get("seedData")
+    if not isinstance(seed_data, dict):
+        return
+
+    normalize_hero_seed(seed_data.get("hero"))
+    normalize_feature_seed(seed_data.get("features"))
+    normalize_items_seed(seed_data.get("testimonials"), ("testimonial_cards", "testimonial_items", "testimonials"))
+    normalize_items_seed(seed_data.get("pricing"), ("pricing_cards", "pricing_items", "plans", "cards"))
+    normalize_items_seed(seed_data.get("faq"), ("faq_items", "questions"))
+    normalize_pricing_seed(seed_data.get("pricing"))
+    normalize_contact_seed(seed_data.get("contact"))
+
+
+def normalize_hero_seed(seed: Any) -> None:
+    if not isinstance(seed, dict):
+        return
+
+    for prefix in ("primary_cta", "secondary_cta"):
+        if isinstance(seed.get(prefix), dict):
+            normalize_link_seed(seed[prefix])
+            continue
+
+        label = seed.pop(f"{prefix}_label", None)
+        url = seed.pop(f"{prefix}_url", None)
+        href = seed.pop(f"{prefix}_href", None)
+        if label is None and url is None and href is None:
+            continue
+        seed[prefix] = {
+            "text": label or "",
+            "url": url or href or "",
+        }
+
+
+def normalize_items_seed(seed: Any, aliases: tuple[str, ...]) -> None:
+    if not isinstance(seed, dict):
+        return
+
+    if "items" not in seed:
+        for alias in aliases:
+            if alias in seed:
+                seed["items"] = seed.pop(alias)
+                break
+
+    items = seed.get("items")
+    if not isinstance(items, list):
+        return
+
+    for item in items:
+        if isinstance(item, dict):
+            normalize_link_seed(item.get("cta"))
+
+
+def normalize_feature_seed(seed: Any) -> None:
+    normalize_items_seed(seed, ("feature_cards", "feature_items", "cards"))
+    if not isinstance(seed, dict):
+        return
+
+    items = seed.get("items")
+    if not isinstance(items, list):
+        return
+
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        item.pop("image", None)
+        item.pop("cta", None)
+
+
+def normalize_pricing_seed(seed: Any) -> None:
+    if not isinstance(seed, dict):
+        return
+
+    normalize_items_seed(seed, ("pricing_cards", "pricing_items", "plans", "cards"))
+    items = seed.get("items")
+    if not isinstance(items, list):
+        return
+
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        features = item.get("features")
+        if not isinstance(features, list):
+            continue
+        item["features"] = [normalize_pricing_feature_seed(feature) for feature in features]
+
+
+def normalize_pricing_feature_seed(feature: Any) -> dict[str, str]:
+    if isinstance(feature, dict):
+        text = feature.get("text", feature.get("value", feature.get("label", "")))
+        return {"text": str(text or "")}
+    return {"text": str(feature or "")}
+
+
+def normalize_contact_seed(seed: Any) -> None:
+    if not isinstance(seed, dict):
+        return
+
+    form = seed.get("form")
+    if not isinstance(form, dict):
+        form = {}
+        seed["form"] = form
+
+    form_action = seed.pop("form_action", None)
+    form_method = seed.pop("form_method", None)
+    submit_label = seed.pop("submit_label", None)
+    form_fields = seed.pop("form_fields", None)
+
+    if form_action is not None and "action" not in form:
+        form["action"] = form_action
+    if form_method is not None and "method" not in form:
+        form["method"] = form_method
+    if submit_label is not None and "submit_label" not in form:
+        form["submit_label"] = submit_label
+    if form_fields is not None and "fields" not in form:
+        form["fields"] = form_fields
+
+    fields = form.get("fields")
+    if not isinstance(fields, list):
+        return
+    for field in fields:
+        if not isinstance(field, dict):
+            continue
+        if "input_type" not in field and "type" in field:
+            field["input_type"] = field.pop("type")
+
+
+def normalize_link_seed(seed: Any) -> None:
+    if not isinstance(seed, dict):
+        return
+    if "url" not in seed and "href" in seed:
+        seed["url"] = seed.pop("href")
+
+
 def repair_section_attribute_names(payload: dict[str, Any]) -> None:
     attributes = payload.get("singleTypeAttributes", [])
     seed_data = payload.get("seedData", {})
     if not isinstance(attributes, list) or not isinstance(seed_data, dict):
         return
 
-    canonical_names = {"hero", "features", "testimonials", "pricing", "faq", "contact"}
+    canonical_names = set(CANONICAL_SECTION_NAMES)
     existing_names = {
         attribute.get("name")
         for attribute in attributes
@@ -631,8 +1111,7 @@ def repair_dynamic_sections_attribute(payload: dict[str, Any]) -> None:
         for attribute in attributes
         if isinstance(attribute, dict) and isinstance(attribute.get("name"), str)
     }
-    canonical_names = ("hero", "features", "testimonials", "pricing", "faq", "contact")
-    section_seed_names = [name for name in canonical_names if seed_data.get(name) is not None]
+    section_seed_names = [name for name in CANONICAL_SECTION_NAMES if seed_data.get(name) is not None]
     if "sections" not in attribute_names or not section_seed_names:
         return
 
@@ -709,15 +1188,7 @@ def section_component_aliases(section_name: str) -> set[str]:
 
 
 def section_source_index(section_name: str) -> int | None:
-    source_indexes = {
-        "hero": 1,
-        "features": 2,
-        "testimonials": 3,
-        "pricing": 4,
-        "faq": 5,
-        "contact": 6,
-    }
-    return source_indexes.get(section_name)
+    return CANONICAL_SECTION_SOURCE_INDEXES.get(section_name)
 
 
 def llm_model_identity_names() -> set[str]:
@@ -990,10 +1461,10 @@ def build_shared_section_components(
 def hero_components(category: str) -> list[ComponentPlan]:
     return [
         ComponentPlan(
-            uid=f"{category}.hero-section",
+            uid=f"{category}.hero",
             category=category,
-            displayName="Hero Section",
-            fileName="hero-section",
+            displayName="Hero",
+            fileName="hero",
             fields=[
                 FieldPlan(name="eyebrow", type="string"),
                 FieldPlan(name="title", type="string", required=True),
@@ -1009,10 +1480,10 @@ def hero_components(category: str) -> list[ComponentPlan]:
 def feature_components(category: str) -> list[ComponentPlan]:
     return [
         ComponentPlan(
-            uid=f"{category}.features-section",
+            uid=f"{category}.features",
             category=category,
-            displayName="Features Section",
-            fileName="features-section",
+            displayName="Features",
+            fileName="features",
             fields=[
                 FieldPlan(name="title", type="string", required=True),
                 FieldPlan(name="description", type="text"),
@@ -1027,8 +1498,6 @@ def feature_components(category: str) -> list[ComponentPlan]:
             fields=[
                 FieldPlan(name="title", type="string", required=True),
                 FieldPlan(name="description", type="text"),
-                FieldPlan(name="image", type="media", multiple=False, allowedTypes=["images"]),
-                FieldPlan(name="cta", type="component", component="shared.link", repeatable=False),
             ],
         ),
     ]
@@ -1037,10 +1506,10 @@ def feature_components(category: str) -> list[ComponentPlan]:
 def testimonial_components(category: str) -> list[ComponentPlan]:
     return [
         ComponentPlan(
-            uid=f"{category}.testimonials-section",
+            uid=f"{category}.testimonials",
             category=category,
-            displayName="Testimonials Section",
-            fileName="testimonials-section",
+            displayName="Testimonials",
+            fileName="testimonials",
             fields=[
                 FieldPlan(name="title", type="string", required=True),
                 FieldPlan(name="description", type="text"),
@@ -1064,10 +1533,10 @@ def testimonial_components(category: str) -> list[ComponentPlan]:
 def pricing_components(category: str) -> list[ComponentPlan]:
     return [
         ComponentPlan(
-            uid=f"{category}.pricing-section",
+            uid=f"{category}.pricing",
             category=category,
-            displayName="Pricing Section",
-            fileName="pricing-section",
+            displayName="Pricing",
+            fileName="pricing",
             fields=[
                 FieldPlan(name="title", type="string", required=True),
                 FieldPlan(name="description", type="text"),
@@ -1102,10 +1571,10 @@ def pricing_components(category: str) -> list[ComponentPlan]:
 def faq_components(category: str) -> list[ComponentPlan]:
     return [
         ComponentPlan(
-            uid=f"{category}.faq-section",
+            uid=f"{category}.faq",
             category=category,
-            displayName="FAQ Section",
-            fileName="faq-section",
+            displayName="FAQ",
+            fileName="faq",
             fields=[
                 FieldPlan(name="title", type="string", required=True),
                 FieldPlan(name="description", type="text"),
@@ -1128,10 +1597,10 @@ def faq_components(category: str) -> list[ComponentPlan]:
 def contact_components(category: str) -> list[ComponentPlan]:
     return [
         ComponentPlan(
-            uid=f"{category}.contact-section",
+            uid=f"{category}.contact",
             category=category,
-            displayName="Contact Section",
-            fileName="contact-section",
+            displayName="Contact",
+            fileName="contact",
             fields=[
                 FieldPlan(name="title", type="string", required=True),
                 FieldPlan(name="description", type="text"),
@@ -1179,13 +1648,13 @@ def build_single_type_attributes(
     ]
 
     component_by_hint = {
-        "hero": "hero-section",
-        "feature": "features-section",
-        "testimonial": "testimonials-section",
-        "pricing": "pricing-section",
-        "faq": "faq-section",
-        "contact": "contact-section",
-        "form": "contact-section",
+        "hero": "hero",
+        "feature": "features",
+        "testimonial": "testimonials",
+        "pricing": "pricing",
+        "faq": "faq",
+        "contact": "contact",
+        "form": "contact",
     }
 
     for section in html_analysis.get("candidateSections", []):
@@ -1253,8 +1722,6 @@ def seed_items_section(content: dict[str, Any]) -> dict[str, Any]:
             {
                 "title": item.get("title", ""),
                 "description": item.get("description", ""),
-                "image": item.get("image"),
-                "cta": normalize_link(item.get("cta")),
             }
             for item in content.get("items", [])
         ],
