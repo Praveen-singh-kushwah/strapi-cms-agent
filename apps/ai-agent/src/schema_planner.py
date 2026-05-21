@@ -262,8 +262,21 @@ def generate_openrouter_cms_plan(
         max_tokens=int(context["maxTokens"]),
     )
 
-    choice = completion.choices[0]
-    content = choice.message.content
+    choices = completion.choices or []
+    if not choices:
+        raise ValueError(
+            "OpenRouter planner returned no choices. "
+            f"Raw response: {completion.model_dump(exclude_none=True)}"
+        )
+
+    choice = choices[0]
+    content = choice.message.content if choice.message else None
+    if isinstance(content, list):
+        content = "\n".join(
+            part.get("text", "")
+            for part in content
+            if isinstance(part, dict) and part.get("type") in {None, "text"}
+        )
     if not content:
         raise ValueError(
             "OpenRouter planner returned an empty response "
@@ -283,6 +296,9 @@ def validate_llm_plan_content(content: str) -> CmsPlan:
     in that case, adding the missing attribute is deterministic and safe.
     """
     payload = json.loads(content)
+    if not isinstance(payload, dict):
+        raise ValueError("LLM planner response must be a JSON object")
+
     repair_page_identity(payload)
     repair_component_uids(payload)
     repair_section_attribute_names(payload)
@@ -308,10 +324,10 @@ def validate_llm_plan_content(content: str) -> CmsPlan:
             for key, value in seed_data.items()
             if key in attribute_names
         }
-        payload.setdefault("warnings", [])
-        payload["warnings"].append(
+        append_warning(
+            payload,
             "Removed seedData keys that were not present in singleTypeAttributes: "
-            + ", ".join(removed_keys)
+            + ", ".join(removed_keys),
         )
         return CmsPlan.model_validate(payload)
 
@@ -341,8 +357,7 @@ def repair_page_identity(payload: dict[str, Any]) -> None:
             "description": "CMS single type for the landing page.",
         }
     )
-    payload.setdefault("warnings", [])
-    payload["warnings"].append("Repaired pageModel because it used the LLM model name as the page identity.")
+    append_warning(payload, "Repaired pageModel because it used the LLM model name as the page identity.")
 
 
 def repair_component_uids(payload: dict[str, Any]) -> None:
@@ -379,10 +394,10 @@ def repair_component_uids(payload: dict[str, Any]) -> None:
         repair_component_references(component.get("fields", []), replacements)
 
     repair_component_references(payload.get("singleTypeAttributes", []), replacements)
-    payload.setdefault("warnings", [])
-    payload["warnings"].append(
+    append_warning(
+        payload,
         "Repaired component UIDs to category.component-name format: "
-        + ", ".join(f"{old} -> {new}" for old, new in sorted(replacements.items()))
+        + ", ".join(f"{old} -> {new}" for old, new in sorted(replacements.items())),
     )
 
 
@@ -437,10 +452,10 @@ def repair_section_attribute_names(payload: dict[str, Any]) -> None:
         if old_name in seed_data and new_name not in seed_data:
             seed_data[new_name] = seed_data.pop(old_name)
 
-    payload.setdefault("warnings", [])
-    payload["warnings"].append(
+    append_warning(
+        payload,
         "Repaired section attribute names to match canonical seedData keys: "
-        + ", ".join(f"{old} -> {new}" for old, new in sorted(replacements.items()))
+        + ", ".join(f"{old} -> {new}" for old, new in sorted(replacements.items())),
     )
 
 
@@ -483,16 +498,27 @@ def add_missing_seo_attribute(payload: dict[str, Any]) -> None:
             "sourceSectionIndex": None,
         },
     )
-    payload.setdefault("warnings", [])
-    payload["warnings"].append("Added missing seo singleTypeAttribute for seedData.seo.")
+    append_warning(payload, "Added missing seo singleTypeAttribute for seedData.seo.")
 
 
 def single_type_attribute_names(payload: dict[str, Any]) -> set[str]:
+    attributes = payload.get("singleTypeAttributes") or []
+    if not isinstance(attributes, list):
+        return set()
+
     return {
         attribute.get("name")
-        for attribute in payload.get("singleTypeAttributes", [])
+        for attribute in attributes
         if isinstance(attribute, dict) and isinstance(attribute.get("name"), str)
     }
+
+
+def append_warning(payload: dict[str, Any], message: str) -> None:
+    warnings = payload.get("warnings")
+    if not isinstance(warnings, list):
+        warnings = []
+        payload["warnings"] = warnings
+    warnings.append(message)
 
 
 def openrouter_response_format(context: dict[str, Any]) -> dict[str, Any]:
