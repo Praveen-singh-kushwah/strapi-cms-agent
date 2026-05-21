@@ -25,6 +25,12 @@ SUPPORTED_STRAPI_FIELD_TYPES = {
     "component",
     "dynamiczone",
 }
+FORBIDDEN_SCHEMA_KEYS = {"seedData", "seed_data", "warnings", "sourceSectionIndex", "source_section_index"}
+COMPONENT_SCHEMA_KEYS = {"collectionName", "info", "pluginOptions", "attributes"}
+CONTENT_TYPE_SCHEMA_KEYS = {"kind", "collectionName", "info", "options", "pluginOptions", "attributes"}
+INFO_COMPONENT_KEYS = {"displayName", "description", "icon"}
+INFO_CONTENT_TYPE_KEYS = {"singularName", "pluralName", "displayName", "description"}
+SCHEMA_PATH_PATTERN = re.compile(r"^[a-z][a-z0-9-]*$")
 
 
 def build_strapi_schema_files(
@@ -178,16 +184,35 @@ def validate_generated_schema_files(output_dir: str | Path | None = None) -> dic
         errors.append(f"No generated schema JSON files found in: {root}")
 
     relative_files = []
+    relative_file_set: set[str] = set()
+    collection_names: dict[str, str] = {}
+    content_type_files = []
     generated_component_uids = generated_component_uids_from_paths(root, json_files)
     referenced_components: set[str] = set()
     for file_path in json_files:
         relative_path = normalize_path(file_path.relative_to(root))
         relative_files.append(relative_path)
+        if relative_path in relative_file_set:
+            errors.append(f"{relative_path}: duplicate generated schema file path")
+        relative_file_set.add(relative_path)
+
         try:
             document = json.loads(file_path.read_text(encoding="utf-8"))
         except json.JSONDecodeError as exc:
             errors.append(f"{relative_path}: invalid JSON: {exc}")
             continue
+
+        if relative_path.startswith("src/api/"):
+            content_type_files.append(relative_path)
+
+        collection_name = document.get("collectionName") if isinstance(document, dict) else None
+        if isinstance(collection_name, str):
+            existing_path = collection_names.get(collection_name)
+            if existing_path and existing_path != relative_path:
+                errors.append(
+                    f"{relative_path}: collectionName duplicates {existing_path}: {collection_name}"
+                )
+            collection_names[collection_name] = relative_path
 
         errors.extend(validate_schema_document(relative_path, document))
         referenced_components.update(component_references_in_document(document))
@@ -195,6 +220,9 @@ def validate_generated_schema_files(output_dir: str | Path | None = None) -> dic
     missing_component_files = sorted(referenced_components - generated_component_uids)
     for uid in missing_component_files:
         errors.append(f"{uid}: referenced component schema file was not generated")
+
+    if len(content_type_files) != 1:
+        errors.append(f"Expected exactly one generated content type schema, found {len(content_type_files)}")
 
     return {
         "isValid": not errors,
@@ -306,9 +334,7 @@ def validate_schema_document(relative_path: str, document: Any) -> list[str]:
     if not isinstance(document, dict):
         return [f"{relative_path}: schema file must contain a JSON object"]
 
-    forbidden_keys = {"seedData", "warnings"}
-    for key in forbidden_keys.intersection(document):
-        errors.append(f"{relative_path}: schema file must not include {key}")
+    errors.extend(validate_forbidden_keys(relative_path, document))
 
     if relative_path.startswith("src/components/"):
         errors.extend(validate_component_schema_document(relative_path, document))
@@ -353,19 +379,53 @@ def component_references_in_document(document: Any) -> set[str]:
 
 
 def validate_component_schema_document(relative_path: str, document: dict[str, Any]) -> list[str]:
-    errors = validate_common_schema_keys(relative_path, document, required_keys={"collectionName", "info", "pluginOptions", "attributes"})
+    errors = validate_component_schema_path(relative_path)
+    errors.extend(
+        validate_allowed_top_level_keys(
+            relative_path,
+            document,
+            allowed_keys=COMPONENT_SCHEMA_KEYS,
+        )
+    )
+    errors.extend(
+        validate_common_schema_keys(
+            relative_path,
+            document,
+            required_keys=COMPONENT_SCHEMA_KEYS,
+        )
+    )
     info = document.get("info")
     if not isinstance(info, dict) or not isinstance(info.get("displayName"), str):
         errors.append(f"{relative_path}: component info.displayName must be set")
+    elif not info["displayName"].strip():
+        errors.append(f"{relative_path}: component info.displayName must not be empty")
+    if isinstance(info, dict):
+        errors.extend(validate_allowed_info_keys(relative_path, info, INFO_COMPONENT_KEYS))
+
+    expected_collection_name = expected_component_collection_name_from_path(relative_path)
+    if expected_collection_name and document.get("collectionName") != expected_collection_name:
+        errors.append(
+            f"{relative_path}: collectionName should be {expected_collection_name}"
+        )
     errors.extend(validate_attributes_document(relative_path, document.get("attributes")))
     return errors
 
 
 def validate_content_type_schema_document(relative_path: str, document: dict[str, Any]) -> list[str]:
-    errors = validate_common_schema_keys(
-        relative_path,
-        document,
-        required_keys={"kind", "collectionName", "info", "options", "pluginOptions", "attributes"},
+    errors = validate_content_type_schema_path(relative_path)
+    errors.extend(
+        validate_allowed_top_level_keys(
+            relative_path,
+            document,
+            allowed_keys=CONTENT_TYPE_SCHEMA_KEYS,
+        )
+    )
+    errors.extend(
+        validate_common_schema_keys(
+            relative_path,
+            document,
+            required_keys=CONTENT_TYPE_SCHEMA_KEYS,
+        )
     )
     if document.get("kind") != "singleType":
         errors.append(f"{relative_path}: content type kind must be singleType")
@@ -377,10 +437,14 @@ def validate_content_type_schema_document(relative_path: str, document: dict[str
         for key in ("singularName", "pluralName", "displayName"):
             if not isinstance(info.get(key), str) or not info[key]:
                 errors.append(f"{relative_path}: info.{key} must be set")
+        errors.extend(validate_allowed_info_keys(relative_path, info, INFO_CONTENT_TYPE_KEYS))
+        errors.extend(validate_content_type_info_matches_path(relative_path, info, document))
 
     options = document.get("options")
     if not isinstance(options, dict) or not isinstance(options.get("draftAndPublish"), bool):
         errors.append(f"{relative_path}: options.draftAndPublish must be true or false")
+    elif set(options) - {"draftAndPublish"}:
+        errors.append(f"{relative_path}: options contains unsupported keys: {', '.join(sorted(set(options) - {'draftAndPublish'}))}")
 
     errors.extend(validate_attributes_document(relative_path, document.get("attributes")))
     return errors
@@ -394,10 +458,14 @@ def validate_common_schema_keys(relative_path: str, document: dict[str, Any], re
 
     if not isinstance(document.get("collectionName"), str) or not document.get("collectionName"):
         errors.append(f"{relative_path}: collectionName must be set")
+    elif not is_snake_case_identifier(document["collectionName"]):
+        errors.append(f"{relative_path}: collectionName must be snake_case")
     if not isinstance(document.get("pluginOptions"), dict):
         errors.append(f"{relative_path}: pluginOptions must be an object")
     if not isinstance(document.get("attributes"), dict):
         errors.append(f"{relative_path}: attributes must be an object")
+    elif not document["attributes"]:
+        errors.append(f"{relative_path}: attributes must not be empty")
 
     return errors
 
@@ -409,10 +477,13 @@ def validate_attributes_document(relative_path: str, attributes: Any) -> list[st
     errors = []
     for name, attribute in attributes.items():
         location = f"{relative_path}: attributes.{name}"
+        if not is_snake_case_identifier(name):
+            errors.append(f"{location}: attribute key must be snake_case")
         if not isinstance(attribute, dict):
             errors.append(f"{location} must be an object")
             continue
 
+        errors.extend(validate_allowed_attribute_keys(location, attribute))
         attribute_type = attribute.get("type")
         if attribute_type not in SUPPORTED_STRAPI_FIELD_TYPES:
             errors.append(f"{location}.type is unsupported or missing")
@@ -434,15 +505,128 @@ def validate_attributes_document(relative_path: str, attributes: Any) -> list[st
 
         if "required" in attribute and not isinstance(attribute["required"], bool):
             errors.append(f"{location}.required must be true or false")
-        if "sourceSectionIndex" in attribute:
-            errors.append(f"{location}: sourceSectionIndex must not be written to Strapi schema")
 
+    return errors
+
+
+def validate_component_schema_path(relative_path: str) -> list[str]:
+    parts = Path(relative_path).parts
+    if len(parts) != 4 or parts[0] != "src" or parts[1] != "components" or not parts[3].endswith(".json"):
+        return [
+            f"{relative_path}: component schema path must be src/components/[category]/[component].json"
+        ]
+
+    errors = []
+    category = parts[2]
+    file_name = Path(parts[3]).stem
+    if not is_kebab_case_identifier(category):
+        errors.append(f"{relative_path}: component category path must be kebab-case")
+    if not is_kebab_case_identifier(file_name):
+        errors.append(f"{relative_path}: component file name must be kebab-case")
+    return errors
+
+
+def validate_content_type_schema_path(relative_path: str) -> list[str]:
+    parts = Path(relative_path).parts
+    if (
+        len(parts) != 6
+        or parts[0] != "src"
+        or parts[1] != "api"
+        or parts[3] != "content-types"
+        or parts[5] != "schema.json"
+    ):
+        return [
+            f"{relative_path}: content type schema path must be src/api/[api-name]/content-types/[content-type-name]/schema.json"
+        ]
+
+    errors = []
+    api_name = parts[2]
+    content_type_name = parts[4]
+    if not is_kebab_case_identifier(api_name):
+        errors.append(f"{relative_path}: API folder name must be kebab-case")
+    if not is_kebab_case_identifier(content_type_name):
+        errors.append(f"{relative_path}: content type folder name must be kebab-case")
+    return errors
+
+
+def validate_allowed_top_level_keys(relative_path: str, document: dict[str, Any], allowed_keys: set[str]) -> list[str]:
+    extra_keys = sorted(set(document) - allowed_keys)
+    return [f"{relative_path}: unsupported top-level keys: {', '.join(extra_keys)}"] if extra_keys else []
+
+
+def validate_allowed_info_keys(relative_path: str, info: dict[str, Any], allowed_keys: set[str]) -> list[str]:
+    extra_keys = sorted(set(info) - allowed_keys)
+    return [f"{relative_path}: info contains unsupported keys: {', '.join(extra_keys)}"] if extra_keys else []
+
+
+def validate_allowed_attribute_keys(location: str, attribute: dict[str, Any]) -> list[str]:
+    attribute_type = attribute.get("type")
+    allowed_keys = {"type", "required"}
+    if attribute_type == "component":
+        allowed_keys.update({"component", "repeatable"})
+    elif attribute_type == "media":
+        allowed_keys.update({"multiple", "allowedTypes"})
+    elif attribute_type == "dynamiczone":
+        allowed_keys.update({"components"})
+
+    extra_keys = sorted(set(attribute) - allowed_keys)
+    return [f"{location}: unsupported attribute keys: {', '.join(extra_keys)}"] if extra_keys else []
+
+
+def validate_content_type_info_matches_path(
+    relative_path: str,
+    info: dict[str, Any],
+    document: dict[str, Any],
+) -> list[str]:
+    parts = Path(relative_path).parts
+    if len(parts) != 6:
+        return []
+
+    errors = []
+    content_type_folder = parts[4]
+    singular_name = info.get("singularName")
+    plural_name = info.get("pluralName")
+    if isinstance(singular_name, str) and singular_name != content_type_folder:
+        errors.append(f"{relative_path}: info.singularName must match content type folder name")
+    if isinstance(plural_name, str):
+        expected_collection_name = to_snake_case(plural_name)
+        if document.get("collectionName") != expected_collection_name:
+            errors.append(f"{relative_path}: collectionName should be {expected_collection_name}")
+    return errors
+
+
+def expected_component_collection_name_from_path(relative_path: str) -> str | None:
+    parts = Path(relative_path).parts
+    if len(parts) != 4:
+        return None
+    return f"components_{to_snake_case(parts[2])}_{to_snake_case(Path(parts[3]).stem)}"
+
+
+def validate_forbidden_keys(relative_path: str, value: Any, path: str = "$") -> list[str]:
+    errors = []
+    if isinstance(value, dict):
+        for key, child in value.items():
+            child_path = f"{path}.{key}"
+            if key in FORBIDDEN_SCHEMA_KEYS:
+                errors.append(f"{relative_path}: forbidden key found at {child_path}")
+            errors.extend(validate_forbidden_keys(relative_path, child, child_path))
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            errors.extend(validate_forbidden_keys(relative_path, item, f"{path}[{index}]"))
     return errors
 
 
 def to_snake_case(value: str) -> str:
     result = re.sub(r"[^a-zA-Z0-9]+", "_", value)
     return result.strip("_").lower()
+
+
+def is_snake_case_identifier(value: str) -> bool:
+    return re.fullmatch(r"[a-z][a-z0-9_]*", value) is not None
+
+
+def is_kebab_case_identifier(value: str) -> bool:
+    return SCHEMA_PATH_PATTERN.fullmatch(value) is not None
 
 
 def normalize_path(path: str | Path) -> str:
