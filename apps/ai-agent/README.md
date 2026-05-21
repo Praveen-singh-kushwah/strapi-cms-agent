@@ -54,10 +54,16 @@ To generate a validation report for the plan:
 python -c "from src.section_detector import analyze_html_file; from src.schema_planner import llm_section_planner_node; from src.schema_validator import validate_cms_plan; import json; a=analyze_html_file('notebooks/sample-html/landing-page-1.html'); s=llm_section_planner_node({'html_analysis': a, 'errors': []}); print(json.dumps(s.get('errors') or validate_cms_plan(s['cms_plan']), indent=2))"
 ```
 
-To generate Strapi schema files into the safe local output folder:
+To generate Strapi schema files into the safe local output folder, use the helper command:
 
 ```powershell
-python -c "from src.section_detector import analyze_html_file; from src.schema_planner import llm_section_planner_node; from src.strapi_schema_generator import write_strapi_schema_files, validate_generated_schema_files; import json; a=analyze_html_file('notebooks/sample-html/landing-page-1.html'); s=llm_section_planner_node({'html_analysis': a, 'planner_context': {'useLLM': False}, 'errors': []}); report=write_strapi_schema_files(s['cms_plan']); validation=validate_generated_schema_files(report['outputDir']); print(json.dumps({'writeReport': report, 'validation': validation}, indent=2))"
+python -m src.generate_strapi_schemas notebooks/sample-html/landing-page-1.html
+```
+
+The helper uses the deterministic planner by default. To use the configured LLM planner explicitly:
+
+```powershell
+python -m src.generate_strapi_schemas notebooks/sample-html/landing-page-1.html --use-llm
 ```
 
 Generated schema files are written under:

@@ -1,0 +1,113 @@
+"""Command-line helper for generating Strapi schemas from an HTML file."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+from typing import Any
+
+from src.schema_planner import llm_section_planner_node
+from src.schema_validator import validate_cms_plan
+from src.section_detector import analyze_html_file
+from src.strapi_schema_generator import validate_generated_schema_files, write_strapi_schema_files
+
+
+def generate_strapi_schema_report(
+    html_file: str | Path,
+    *,
+    output_dir: str | Path | None = None,
+    use_llm: bool = False,
+    draft_and_publish: bool = True,
+) -> dict[str, Any]:
+    """Run the full HTML -> CMS plan -> Strapi schema generation flow."""
+    html_path = Path(html_file)
+    report: dict[str, Any] = {
+        "isValid": False,
+        "htmlFile": str(html_path),
+        "usedLLM": use_llm,
+        "planValidation": None,
+        "writeReport": None,
+        "generatedValidation": None,
+        "errors": [],
+    }
+
+    try:
+        analysis = analyze_html_file(html_path)
+        state = llm_section_planner_node(
+            {
+                "html_analysis": analysis,
+                "planner_context": {"useLLM": use_llm},
+                "errors": [],
+            }
+        )
+        if state.get("errors"):
+            report["errors"] = state["errors"]
+            return report
+
+        cms_plan = state["cms_plan"]
+        plan_validation = validate_cms_plan(cms_plan)
+        report["planValidation"] = plan_validation
+        if not plan_validation["isValid"]:
+            report["errors"] = plan_validation["errors"]
+            return report
+
+        write_report = write_strapi_schema_files(
+            cms_plan,
+            output_dir=output_dir,
+            draft_and_publish=draft_and_publish,
+        )
+        generated_validation = validate_generated_schema_files(write_report["outputDir"])
+
+        report["writeReport"] = write_report
+        report["generatedValidation"] = generated_validation
+        report["isValid"] = generated_validation["isValid"]
+        report["errors"] = generated_validation["errors"]
+        return report
+    except Exception as exc:  # pragma: no cover - command-line safety net
+        report["errors"] = [str(exc)]
+        return report
+
+
+def build_arg_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Generate Strapi v5 schema JSON files from an inspected HTML page.",
+    )
+    parser.add_argument(
+        "html_file",
+        help="Path to the HTML file to inspect.",
+    )
+    parser.add_argument(
+        "--output-dir",
+        help="Directory where generated Strapi schema files should be written. Defaults to generated/strapi.",
+    )
+    parser.add_argument(
+        "--use-llm",
+        action="store_true",
+        help="Use the configured LLM planner. By default this command uses the deterministic planner.",
+    )
+    parser.add_argument(
+        "--no-draft-and-publish",
+        action="store_true",
+        help="Set Strapi options.draftAndPublish to false in the generated content type schema.",
+    )
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_arg_parser()
+    args = parser.parse_args(argv)
+
+    report = generate_strapi_schema_report(
+        args.html_file,
+        output_dir=args.output_dir,
+        use_llm=args.use_llm,
+        draft_and_publish=not args.no_draft_and_publish,
+    )
+    print(json.dumps(report, indent=2))
+    return 0 if report["isValid"] else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))
