@@ -33,6 +33,39 @@ The sandbox reads schemas from:
 D:\strapi-cms-agent\apps\strapi-sandbox\src
 ```
 
+## Full Validation In One Command
+
+From the repo root:
+
+```powershell
+cd D:\strapi-cms-agent
+python scripts\validate_strapi_sandbox.py
+```
+
+This command runs:
+
+- AI-side schema generation, snapshot check, schema copy, and seed generation
+- Strapi-side build, seed dry-run, seed import, and readback verification
+
+Expected result:
+
+```json
+{
+  "isValid": true,
+  "errors": []
+}
+```
+
+Use this option when you want the full happy-path validation. Use the lower-level commands below when debugging one step.
+
+Useful options:
+
+```powershell
+python scripts\validate_strapi_sandbox.py --skip-import
+python scripts\validate_strapi_sandbox.py --dry-run-copy
+python scripts\validate_strapi_sandbox.py --use-llm
+```
+
 ## Node Version
 
 Strapi v5 supports Node 20 through Node 24. The sandbox should be run with the bundled Node 24 runtime, not system Node 25.

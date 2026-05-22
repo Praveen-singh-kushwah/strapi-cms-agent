@@ -14,3 +14,13 @@ The application analyzes webpage structure, proposes a validated Strapi schema p
 ## Basic Architecture Flow
 
 User -> Web App -> Java Backend -> Python AI Agent -> Node Strapi Worker -> Strapi CMS
+
+## Strapi Sandbox Validation
+
+After the AI agent virtual environment and Strapi sandbox dependencies are installed, run the full local validation flow from the repo root:
+
+```powershell
+python scripts\validate_strapi_sandbox.py
+```
+
+This runs the AI-side schema/seed preparation and the Strapi-side build/import/readback validation. For step-by-step commands, see `docs/strapi-sandbox-workflow.md`.
