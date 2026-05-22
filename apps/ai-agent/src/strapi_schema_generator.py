@@ -179,7 +179,8 @@ def validate_generated_schema_files(output_dir: str | Path | None = None) -> dic
             "summary": {"outputDir": str(root.resolve()), "fileCount": 0, "files": []},
         }
 
-    json_files = sorted(root.rglob("*.json"))
+    schema_root = root / "src"
+    json_files = sorted(schema_root.rglob("*.json")) if schema_root.exists() else sorted(root.rglob("*.json"))
     if not json_files:
         errors.append(f"No generated schema JSON files found in: {root}")
 

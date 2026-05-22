@@ -154,6 +154,7 @@ class ImageSeed(StrictBaseModel):
 
 class SeoSeed(StrictBaseModel):
     meta_title: str = ""
+    meta_description: str = ""
 
 
 class HeroSeed(StrictBaseModel):

@@ -1,0 +1,22 @@
+{
+  "collectionName": "components_landing_page_form_field",
+  "info": {
+    "displayName": "Form Field"
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "label": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string",
+      "required": true
+    },
+    "input_type": {
+      "type": "string"
+    },
+    "required": {
+      "type": "boolean"
+    }
+  }
+}

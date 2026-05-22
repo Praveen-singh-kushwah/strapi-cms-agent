@@ -1452,13 +1452,13 @@ def build_shared_section_components(
         builder = component_builders.get(hint)
         if not builder:
             continue
-        for component in builder(category):
+        for component in builder(category, section):
             components_by_uid.setdefault(component.uid, component)
 
     return list(components_by_uid.values())
 
 
-def hero_components(category: str) -> list[ComponentPlan]:
+def hero_components(category: str, section: dict[str, Any] | None = None) -> list[ComponentPlan]:
     return [
         ComponentPlan(
             uid=f"{category}.hero",
@@ -1477,18 +1477,16 @@ def hero_components(category: str) -> list[ComponentPlan]:
     ]
 
 
-def feature_components(category: str) -> list[ComponentPlan]:
+def feature_components(category: str, section: dict[str, Any] | None = None) -> list[ComponentPlan]:
+    section_fields = section_title_fields(section)
+    section_fields.append(FieldPlan(name="items", type="component", component=f"{category}.feature-card", repeatable=True))
     return [
         ComponentPlan(
             uid=f"{category}.features",
             category=category,
             displayName="Features",
             fileName="features",
-            fields=[
-                FieldPlan(name="title", type="string", required=True),
-                FieldPlan(name="description", type="text"),
-                FieldPlan(name="items", type="component", component=f"{category}.feature-card", repeatable=True),
-            ],
+            fields=section_fields,
         ),
         ComponentPlan(
             uid=f"{category}.feature-card",
@@ -1503,18 +1501,18 @@ def feature_components(category: str) -> list[ComponentPlan]:
     ]
 
 
-def testimonial_components(category: str) -> list[ComponentPlan]:
+def testimonial_components(category: str, section: dict[str, Any] | None = None) -> list[ComponentPlan]:
+    section_fields = section_title_fields(section)
+    section_fields.append(
+        FieldPlan(name="items", type="component", component=f"{category}.testimonial-card", repeatable=True)
+    )
     return [
         ComponentPlan(
             uid=f"{category}.testimonials",
             category=category,
             displayName="Testimonials",
             fileName="testimonials",
-            fields=[
-                FieldPlan(name="title", type="string", required=True),
-                FieldPlan(name="description", type="text"),
-                FieldPlan(name="items", type="component", component=f"{category}.testimonial-card", repeatable=True),
-            ],
+            fields=section_fields,
         ),
         ComponentPlan(
             uid=f"{category}.testimonial-card",
@@ -1530,18 +1528,16 @@ def testimonial_components(category: str) -> list[ComponentPlan]:
     ]
 
 
-def pricing_components(category: str) -> list[ComponentPlan]:
+def pricing_components(category: str, section: dict[str, Any] | None = None) -> list[ComponentPlan]:
+    section_fields = section_title_fields(section)
+    section_fields.append(FieldPlan(name="items", type="component", component=f"{category}.pricing-card", repeatable=True))
     return [
         ComponentPlan(
             uid=f"{category}.pricing",
             category=category,
             displayName="Pricing",
             fileName="pricing",
-            fields=[
-                FieldPlan(name="title", type="string", required=True),
-                FieldPlan(name="description", type="text"),
-                FieldPlan(name="items", type="component", component=f"{category}.pricing-card", repeatable=True),
-            ],
+            fields=section_fields,
         ),
         ComponentPlan(
             uid=f"{category}.pricing-card",
@@ -1568,18 +1564,16 @@ def pricing_components(category: str) -> list[ComponentPlan]:
     ]
 
 
-def faq_components(category: str) -> list[ComponentPlan]:
+def faq_components(category: str, section: dict[str, Any] | None = None) -> list[ComponentPlan]:
+    section_fields = section_title_fields(section)
+    section_fields.append(FieldPlan(name="items", type="component", component=f"{category}.faq-item", repeatable=True))
     return [
         ComponentPlan(
             uid=f"{category}.faq",
             category=category,
             displayName="FAQ",
             fileName="faq",
-            fields=[
-                FieldPlan(name="title", type="string", required=True),
-                FieldPlan(name="description", type="text"),
-                FieldPlan(name="items", type="component", component=f"{category}.faq-item", repeatable=True),
-            ],
+            fields=section_fields,
         ),
         ComponentPlan(
             uid=f"{category}.faq-item",
@@ -1594,18 +1588,16 @@ def faq_components(category: str) -> list[ComponentPlan]:
     ]
 
 
-def contact_components(category: str) -> list[ComponentPlan]:
+def contact_components(category: str, section: dict[str, Any] | None = None) -> list[ComponentPlan]:
+    section_fields = section_title_fields(section)
+    section_fields.append(FieldPlan(name="form", type="component", component=f"{category}.form-config", repeatable=False))
     return [
         ComponentPlan(
             uid=f"{category}.contact",
             category=category,
             displayName="Contact",
             fileName="contact",
-            fields=[
-                FieldPlan(name="title", type="string", required=True),
-                FieldPlan(name="description", type="text"),
-                FieldPlan(name="form", type="component", component=f"{category}.form-config", repeatable=False),
-            ],
+            fields=section_fields,
         ),
         ComponentPlan(
             uid=f"{category}.form-config",
@@ -1632,6 +1624,18 @@ def contact_components(category: str) -> list[ComponentPlan]:
             ],
         ),
     ]
+
+
+def section_title_fields(section: dict[str, Any] | None = None) -> list[FieldPlan]:
+    fields = [FieldPlan(name="title", type="string", required=True)]
+    if has_section_description(section):
+        fields.append(FieldPlan(name="description", type="text"))
+    return fields
+
+
+def has_section_description(section: dict[str, Any] | None = None) -> bool:
+    content = section.get("structuredContent", {}) if isinstance(section, dict) else {}
+    return bool(str(content.get("description", "")).strip())
 
 
 def build_single_type_attributes(
@@ -1699,6 +1703,14 @@ def build_seed_data(html_analysis: dict[str, Any]) -> dict[str, Any]:
             seed_data[attr_name] = seed_faq(content)
         elif hint in ("contact", "form"):
             seed_data[attr_name] = seed_contact(content)
+
+    meta_description = first_non_empty(
+        seed_data.get("hero", {}).get("description") if isinstance(seed_data.get("hero"), dict) else "",
+        seed_data.get("features", {}).get("description") if isinstance(seed_data.get("features"), dict) else "",
+        seed_data.get("contact", {}).get("description") if isinstance(seed_data.get("contact"), dict) else "",
+    )
+    if meta_description:
+        seed_data["seo"]["meta_description"] = meta_description
 
     return seed_data
 
@@ -1803,6 +1815,14 @@ def normalize_link(value: dict[str, Any] | None) -> dict[str, str] | None:
         "text": value.get("text", ""),
         "url": value.get("href", ""),
     }
+
+
+def first_non_empty(*values: Any) -> str:
+    for value in values:
+        text = str(value or "").strip()
+        if text:
+            return text
+    return ""
 
 
 def build_warnings(html_analysis: dict[str, Any]) -> list[str]:

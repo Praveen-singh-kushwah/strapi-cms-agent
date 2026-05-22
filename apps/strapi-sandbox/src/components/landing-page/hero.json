@@ -1,0 +1,36 @@
+{
+  "collectionName": "components_landing_page_hero",
+  "info": {
+    "displayName": "Hero"
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "eyebrow": {
+      "type": "string"
+    },
+    "title": {
+      "type": "string",
+      "required": true
+    },
+    "description": {
+      "type": "text"
+    },
+    "primary_cta": {
+      "type": "component",
+      "component": "shared.link",
+      "repeatable": false
+    },
+    "secondary_cta": {
+      "type": "component",
+      "component": "shared.link",
+      "repeatable": false
+    },
+    "image": {
+      "type": "media",
+      "multiple": false,
+      "allowedTypes": [
+        "images"
+      ]
+    }
+  }
+}

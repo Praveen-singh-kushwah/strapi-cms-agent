@@ -1,0 +1,23 @@
+{
+  "collectionName": "components_landing_page_form_config",
+  "info": {
+    "displayName": "Form Config"
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "action": {
+      "type": "string"
+    },
+    "method": {
+      "type": "string"
+    },
+    "submit_label": {
+      "type": "string"
+    },
+    "fields": {
+      "type": "component",
+      "component": "landing-page.form-field",
+      "repeatable": true
+    }
+  }
+}

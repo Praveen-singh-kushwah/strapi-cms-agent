@@ -1,0 +1,51 @@
+{
+  "kind": "singleType",
+  "collectionName": "landing_pages",
+  "info": {
+    "singularName": "landing-page",
+    "pluralName": "landing-pages",
+    "displayName": "Landing Page",
+    "description": "CMS single type for Landing Page."
+  },
+  "options": {
+    "draftAndPublish": true
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "seo": {
+      "type": "component",
+      "component": "shared.seo",
+      "repeatable": false
+    },
+    "hero": {
+      "type": "component",
+      "component": "landing-page.hero",
+      "repeatable": false
+    },
+    "features": {
+      "type": "component",
+      "component": "landing-page.features",
+      "repeatable": false
+    },
+    "testimonials": {
+      "type": "component",
+      "component": "landing-page.testimonials",
+      "repeatable": false
+    },
+    "pricing": {
+      "type": "component",
+      "component": "landing-page.pricing",
+      "repeatable": false
+    },
+    "faq": {
+      "type": "component",
+      "component": "landing-page.faq",
+      "repeatable": false
+    },
+    "contact": {
+      "type": "component",
+      "component": "landing-page.contact",
+      "repeatable": false
+    }
+  }
+}

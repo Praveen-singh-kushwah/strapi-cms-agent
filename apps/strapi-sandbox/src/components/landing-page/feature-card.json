@@ -1,0 +1,16 @@
+{
+  "collectionName": "components_landing_page_feature_card",
+  "info": {
+    "displayName": "Feature Card"
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "title": {
+      "type": "string",
+      "required": true
+    },
+    "description": {
+      "type": "text"
+    }
+  }
+}

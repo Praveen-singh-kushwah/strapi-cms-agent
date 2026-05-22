@@ -1,0 +1,19 @@
+{
+  "collectionName": "components_landing_page_testimonial_card",
+  "info": {
+    "displayName": "Testimonial Card"
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "quote": {
+      "type": "text",
+      "required": true
+    },
+    "author_name": {
+      "type": "string"
+    },
+    "author_role": {
+      "type": "string"
+    }
+  }
+}

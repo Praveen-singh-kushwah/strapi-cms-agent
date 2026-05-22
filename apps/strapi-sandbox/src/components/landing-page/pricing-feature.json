@@ -1,0 +1,13 @@
+{
+  "collectionName": "components_landing_page_pricing_feature",
+  "info": {
+    "displayName": "Pricing Feature"
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "text": {
+      "type": "string",
+      "required": true
+    }
+  }
+}

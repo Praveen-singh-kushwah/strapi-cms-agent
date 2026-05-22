@@ -1,0 +1,21 @@
+{
+  "collectionName": "components_landing_page_features",
+  "info": {
+    "displayName": "Features"
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "title": {
+      "type": "string",
+      "required": true
+    },
+    "description": {
+      "type": "text"
+    },
+    "items": {
+      "type": "component",
+      "component": "landing-page.feature-card",
+      "repeatable": true
+    }
+  }
+}

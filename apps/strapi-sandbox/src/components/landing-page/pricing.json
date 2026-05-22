@@ -1,0 +1,18 @@
+{
+  "collectionName": "components_landing_page_pricing",
+  "info": {
+    "displayName": "Pricing"
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "title": {
+      "type": "string",
+      "required": true
+    },
+    "items": {
+      "type": "component",
+      "component": "landing-page.pricing-card",
+      "repeatable": true
+    }
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "collectionName": "components_landing_page_testimonials",
+  "info": {
+    "displayName": "Testimonials"
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "title": {
+      "type": "string",
+      "required": true
+    },
+    "items": {
+      "type": "component",
+      "component": "landing-page.testimonial-card",
+      "repeatable": true
+    }
+  }
+}

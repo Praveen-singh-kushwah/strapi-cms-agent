@@ -1,0 +1,17 @@
+{
+  "collectionName": "components_landing_page_faq_item",
+  "info": {
+    "displayName": "FAQ Item"
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "question": {
+      "type": "string",
+      "required": true
+    },
+    "answer": {
+      "type": "text",
+      "required": true
+    }
+  }
+}

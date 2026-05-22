@@ -1,0 +1,21 @@
+{
+  "collectionName": "components_landing_page_contact",
+  "info": {
+    "displayName": "Contact"
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "title": {
+      "type": "string",
+      "required": true
+    },
+    "description": {
+      "type": "text"
+    },
+    "form": {
+      "type": "component",
+      "component": "landing-page.form-config",
+      "repeatable": false
+    }
+  }
+}

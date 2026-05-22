@@ -1,0 +1,15 @@
+{
+  "collectionName": "components_shared_seo",
+  "info": {
+    "displayName": "SEO"
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "meta_title": {
+      "type": "string"
+    },
+    "meta_description": {
+      "type": "text"
+    }
+  }
+}
