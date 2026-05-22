@@ -91,6 +91,20 @@ python -m src.copy_schemas_to_strapi ..\strapi-sandbox --dry-run
 python -m src.copy_schemas_to_strapi ..\strapi-sandbox
 ```
 
+To run the AI-side sandbox preparation flow in one command:
+
+```powershell
+python -m src.run_strapi_sandbox_pipeline notebooks/sample-html/landing-page-1.html
+```
+
+This generates schemas, checks the schema snapshot, copies schemas into the sandbox, and writes the generated seed payload.
+
+Then run the Strapi-side validation from `..\strapi-sandbox`:
+
+```powershell
+& "$node24\node.exe" "C:\Program Files\nodejs\node_modules\npm\bin\npm-cli.js" run validate:generated
+```
+
 For the full Strapi sandbox validation flow, including schema copy, seed generation, seed import, and readback verification, see:
 
 ```text

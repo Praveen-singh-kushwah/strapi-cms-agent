@@ -76,6 +76,24 @@ This writes files under:
 D:\strapi-cms-agent\apps\ai-agent\generated\strapi\src
 ```
 
+## Optional: Run AI-Side Preparation In One Command
+
+The individual steps below are useful for debugging, but the AI-side preparation can also be run as one command:
+
+```powershell
+cd D:\strapi-cms-agent\apps\ai-agent
+.\.venv\Scripts\python.exe -m src.run_strapi_sandbox_pipeline notebooks/sample-html/landing-page-1.html
+```
+
+This command runs:
+
+- schema generation
+- schema snapshot check
+- schema copy into the sandbox
+- seed payload generation
+
+It does not run Strapi build, seed import, or readback verification. Those still run from the sandbox app because they load Strapi and touch the local SQLite database.
+
 ## Step 2: Check Schema Snapshot
 
 From the AI agent app:
@@ -133,6 +151,42 @@ $env:STRAPI_TELEMETRY_DISABLED = "true"
 ```
 
 If the build succeeds, Strapi accepted the generated schema structure.
+
+## Optional: Run Strapi-Side Validation In One Command
+
+After the AI-side preparation command has generated schemas, copied schemas, and generated the seed payload, the Strapi-side validation can be run as one command:
+
+```powershell
+cd D:\strapi-cms-agent\apps\strapi-sandbox
+$node24 = "C:\Users\admin\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin"
+$env:Path = "$node24;$env:Path"
+$env:XDG_CONFIG_HOME = "$PWD\.xdg-config"
+$env:STRAPI_TELEMETRY_DISABLED = "true"
+
+& "$node24\node.exe" "C:\Program Files\nodejs\node_modules\npm\bin\npm-cli.js" run validate:generated
+```
+
+This command runs:
+
+- sandbox build
+- generated seed dry-run
+- generated seed import
+- generated seed readback verification
+
+Expected result:
+
+```json
+{
+  "isValid": true,
+  "errors": []
+}
+```
+
+Use `--skip-import` when you only want to build, dry-run, and verify existing imported content:
+
+```powershell
+& "$node24\node.exe" "C:\Program Files\nodejs\node_modules\npm\bin\npm-cli.js" run validate:generated -- --skip-import
+```
 
 ## Step 5: Generate Seed Payload
 
@@ -268,11 +322,11 @@ The full sandbox validation is successful when:
 - seed dry run returns `isValid: true`
 - seed import returns `isValid: true`
 - seed readback verification returns `isValid: true`
+- `validate:generated` returns `isValid: true`
 - Strapi Admin shows the generated content type, components, seed data, and media link
 
 ## Current Limitations
 
-- Schema copying is still manual.
 - The sandbox is local and disposable.
 - Seed import targets the generated Landing Page single type only.
 - Header and footer global blocks are planned separately and are not imported in this seed flow.

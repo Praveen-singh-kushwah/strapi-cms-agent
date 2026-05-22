@@ -10,6 +10,7 @@
     "dev": "strapi develop",
     "develop": "strapi develop",
     "seed:generated": "node scripts/import-generated-seed.js",
+    "validate:generated": "node scripts/validate-generated.js",
     "verify:generated-seed": "node scripts/verify-generated-seed.js",
     "start": "strapi start",
     "strapi": "strapi",
