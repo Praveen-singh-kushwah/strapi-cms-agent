@@ -101,15 +101,22 @@ If the intended generated schema output changes, update the snapshot explicitly:
 
 ## Step 3: Copy Schemas Into The Sandbox
 
-From the repo root:
+From the AI agent app:
 
 ```powershell
-cd D:\strapi-cms-agent
-Copy-Item -Path apps\ai-agent\generated\strapi\src\api\* -Destination apps\strapi-sandbox\src\api -Recurse -Force
-Copy-Item -Path apps\ai-agent\generated\strapi\src\components\* -Destination apps\strapi-sandbox\src\components -Recurse -Force
+cd D:\strapi-cms-agent\apps\ai-agent
+.\.venv\Scripts\python.exe -m src.copy_schemas_to_strapi ..\strapi-sandbox --dry-run
+.\.venv\Scripts\python.exe -m src.copy_schemas_to_strapi ..\strapi-sandbox
 ```
 
 This updates the sandbox schema files only. It does not import content.
+
+The helper validates that:
+
+- generated schema files exist and pass local schema validation
+- the target directory looks like a Strapi app
+- only `src/api` and `src/components` schema JSON files are copied
+- unrelated Strapi files are left untouched
 
 ## Step 4: Build The Sandbox
 

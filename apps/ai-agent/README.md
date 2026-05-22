@@ -84,6 +84,13 @@ If the intended schema output changes, update the snapshot with:
 python -m src.check_schema_snapshot notebooks/sample-html/landing-page-1.html --update
 ```
 
+To copy generated schema files into a local Strapi app:
+
+```powershell
+python -m src.copy_schemas_to_strapi ..\strapi-sandbox --dry-run
+python -m src.copy_schemas_to_strapi ..\strapi-sandbox
+```
+
 For the full Strapi sandbox validation flow, including schema copy, seed generation, seed import, and readback verification, see:
 
 ```text
