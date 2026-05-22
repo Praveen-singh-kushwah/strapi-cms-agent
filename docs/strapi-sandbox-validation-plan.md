@@ -2,6 +2,12 @@
 
 This document explains how we will validate generated Strapi schema files inside a safe local Strapi app before touching any real project.
 
+For the current executable schema, seed, import, and readback workflow, see:
+
+```text
+docs/strapi-sandbox-workflow.md
+```
+
 ## Purpose
 
 The AI agent can now generate Strapi-compatible schema files under:

@@ -83,3 +83,9 @@ If the intended schema output changes, update the snapshot with:
 ```powershell
 python -m src.check_schema_snapshot notebooks/sample-html/landing-page-1.html --update
 ```
+
+For the full Strapi sandbox validation flow, including schema copy, seed generation, seed import, and readback verification, see:
+
+```text
+..\..\docs\strapi-sandbox-workflow.md
+```
