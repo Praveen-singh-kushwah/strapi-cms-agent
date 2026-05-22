@@ -20,6 +20,7 @@ def build_strapi_seed_payload(
     cms_plan: CmsPlan | dict[str, Any],
     *,
     status: str = "published",
+    html_file: str | Path | None = None,
 ) -> dict[str, Any]:
     """Build an importable Strapi seed payload from the CMS plan seedData."""
     plan = coerce_cms_plan(cms_plan)
@@ -49,6 +50,8 @@ def build_strapi_seed_payload(
             warnings=warnings,
         )
 
+    media_plan = build_media_plan(media_assets, html_file=html_file)
+
     return {
         "uid": f"api::{plan.pageModel.apiName}.{plan.pageModel.singularName}",
         "apiName": plan.pageModel.apiName,
@@ -56,6 +59,7 @@ def build_strapi_seed_payload(
         "status": status,
         "data": data,
         "mediaAssets": media_assets,
+        "mediaPlan": media_plan,
         "warnings": dedupe_messages([*plan.warnings, *warnings]),
     }
 
@@ -73,7 +77,6 @@ def transform_seed_value(
     if field.type == "media":
         if value:
             media_assets.append(media_asset_from_value(path, value))
-            warnings.append(f"{path}: media assets must be uploaded before they can be linked")
         return None
 
     if field.type == "component":
@@ -194,18 +197,70 @@ def media_asset_from_value(path: str, value: Any) -> dict[str, Any]:
     }
 
 
+def build_media_plan(
+    media_assets: list[dict[str, Any]],
+    *,
+    html_file: str | Path | None = None,
+) -> list[dict[str, Any]]:
+    """Resolve media asset references into local upload candidates."""
+    html_path = Path(html_file).resolve() if html_file is not None else None
+    html_dir = html_path.parent if html_path is not None else None
+
+    return [
+        build_media_plan_item(asset, html_dir=html_dir)
+        for asset in media_assets
+    ]
+
+
+def build_media_plan_item(
+    asset: dict[str, Any],
+    *,
+    html_dir: Path | None = None,
+) -> dict[str, Any]:
+    src = str(asset.get("src") or "")
+    resolved_path = resolve_media_source(src, html_dir=html_dir)
+    exists = bool(resolved_path and resolved_path.exists())
+
+    return {
+        "fieldPath": asset.get("fieldPath", ""),
+        "src": src,
+        "alt": asset.get("alt", ""),
+        "resolvedPath": str(resolved_path) if resolved_path is not None else "",
+        "status": "ready" if exists else "missing",
+    }
+
+
+def resolve_media_source(src: str, *, html_dir: Path | None = None) -> Path | None:
+    if not src or is_remote_url(src) or src.startswith("data:"):
+        return None
+
+    source_path = Path(src)
+    if source_path.is_absolute():
+        return source_path
+
+    if html_dir is None:
+        return source_path
+
+    return (html_dir / source_path).resolve()
+
+
+def is_remote_url(value: str) -> bool:
+    return value.startswith(("http://", "https://", "//"))
+
+
 def write_strapi_seed_file(
     cms_plan: CmsPlan | dict[str, Any],
     output_dir: str | Path | None = None,
     *,
     status: str = "published",
+    html_file: str | Path | None = None,
 ) -> dict[str, Any]:
     """Write the generated seed payload to disk."""
     plan = coerce_cms_plan(cms_plan)
     root = Path(output_dir) if output_dir is not None else DEFAULT_SEED_OUTPUT_DIR
     root.mkdir(parents=True, exist_ok=True)
 
-    payload = build_strapi_seed_payload(plan, status=status)
+    payload = build_strapi_seed_payload(plan, status=status, html_file=html_file)
     target_path = root / f"{plan.pageModel.apiName}.seed.json"
     target_path.write_text(
         json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
@@ -243,6 +298,10 @@ def validate_strapi_seed_payload(
     if not isinstance(media_assets, list):
         errors.append("mediaAssets must be a list")
 
+    media_plan = payload.get("mediaPlan")
+    if not isinstance(media_plan, list):
+        errors.append("mediaPlan must be a list")
+
     if cms_plan is not None and isinstance(data, dict):
         plan = coerce_cms_plan(cms_plan)
         expected_keys = {attribute.name for attribute in plan.singleTypeAttributes}
@@ -255,7 +314,16 @@ def validate_strapi_seed_payload(
             errors.append(f"data.{key}: not present in singleTypeAttributes")
 
     if isinstance(media_assets, list) and media_assets:
-        warnings.append("mediaAssets are recorded but not uploaded by the MVP seed importer")
+        warnings.append("mediaAssets are recorded; ready files are uploaded by the sandbox seed importer")
+
+    if isinstance(media_plan, list):
+        missing_media = [
+            item.get("fieldPath", "")
+            for item in media_plan
+            if isinstance(item, dict) and item.get("status") == "missing"
+        ]
+        if missing_media:
+            warnings.append("missing media files: " + ", ".join(missing_media))
 
     return {
         "isValid": not errors,
@@ -266,12 +334,18 @@ def validate_strapi_seed_payload(
             "status": payload.get("status"),
             "dataKeys": sorted(data.keys()) if isinstance(data, dict) else [],
             "mediaAssetCount": len(media_assets) if isinstance(media_assets, list) else 0,
+            "mediaPlanReadyCount": count_media_plan_status(media_plan, "ready") if isinstance(media_plan, list) else 0,
+            "mediaPlanMissingCount": count_media_plan_status(media_plan, "missing") if isinstance(media_plan, list) else 0,
         },
     }
 
 
 def coerce_cms_plan(cms_plan: CmsPlan | dict[str, Any]) -> CmsPlan:
     return cms_plan if isinstance(cms_plan, CmsPlan) else CmsPlan.model_validate(cms_plan)
+
+
+def count_media_plan_status(media_plan: list[Any], status: str) -> int:
+    return sum(1 for item in media_plan if isinstance(item, dict) and item.get("status") == status)
 
 
 def dedupe_messages(messages: list[str]) -> list[str]:

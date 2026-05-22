@@ -56,6 +56,7 @@ def generate_strapi_seed_report(
             cms_plan,
             output_dir=output_dir,
             status=status,
+            html_file=html_path,
         )
         report["seedWriteReport"] = seed_write_report
         report["isValid"] = seed_write_report["validation"]["isValid"]
