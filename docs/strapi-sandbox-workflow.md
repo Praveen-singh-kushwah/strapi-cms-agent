@@ -47,6 +47,14 @@ This command runs:
 - AI-side schema generation, snapshot check, schema copy, and seed generation
 - Strapi-side build, seed dry-run, seed import, and readback verification
 
+Generated schema and seed files are written to a per-HTML run folder:
+
+```text
+D:\strapi-cms-agent\apps\ai-agent\generated\strapi\runs\[html-file-name]
+```
+
+This keeps outputs from different HTML samples from mixing together during validation.
+
 Expected result:
 
 ```json
@@ -64,6 +72,12 @@ Useful options:
 python scripts\validate_strapi_sandbox.py --skip-import
 python scripts\validate_strapi_sandbox.py --dry-run-copy
 python scripts\validate_strapi_sandbox.py --use-llm
+```
+
+To validate a different sample page before a snapshot exists:
+
+```powershell
+python scripts\validate_strapi_sandbox.py --html-file notebooks\sample-html\cost-optimization.html --skip-snapshot
 ```
 
 ## Node Version

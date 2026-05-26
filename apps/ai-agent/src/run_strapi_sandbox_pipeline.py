@@ -16,6 +16,7 @@ from src.generate_strapi_seed import generate_strapi_seed_report
 
 AI_AGENT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SANDBOX_TARGET = AI_AGENT_ROOT.parent / "strapi-sandbox"
+DEFAULT_RUN_OUTPUT_ROOT = AI_AGENT_ROOT / "generated" / "strapi" / "runs"
 
 
 def run_strapi_sandbox_pipeline(
@@ -34,11 +35,16 @@ def run_strapi_sandbox_pipeline(
     """Run schema generation, snapshot check, schema copy, and seed generation."""
     html_path = Path(html_file)
     target_path = Path(target_dir)
+    resolved_schema_output_dir = Path(schema_output_dir) if schema_output_dir else default_schema_output_dir(html_path)
+    resolved_seed_output_dir = Path(seed_output_dir) if seed_output_dir else resolved_schema_output_dir / "seed"
     report: dict[str, Any] = {
         "isValid": False,
         "htmlFile": str(html_path),
         "targetDir": str(target_path),
         "usedLLM": use_llm,
+        "schemaOutputDir": str(resolved_schema_output_dir),
+        "seedOutputDir": str(resolved_seed_output_dir),
+        "seedPath": None,
         "steps": {
             "schemaGeneration": None,
             "snapshotCheck": None,
@@ -51,7 +57,7 @@ def run_strapi_sandbox_pipeline(
 
     schema_report = generate_strapi_schema_report(
         html_path,
-        output_dir=schema_output_dir,
+        output_dir=resolved_schema_output_dir,
         use_llm=use_llm,
         draft_and_publish=draft_and_publish,
     )
@@ -64,7 +70,7 @@ def run_strapi_sandbox_pipeline(
         snapshot_report = check_schema_snapshot(
             html_path,
             snapshot_path=snapshot_path,
-            output_dir=schema_output_dir,
+            output_dir=resolved_schema_output_dir,
             use_llm=use_llm,
             draft_and_publish=draft_and_publish,
         )
@@ -79,10 +85,9 @@ def run_strapi_sandbox_pipeline(
             "errors": [],
         }
 
-    source_dir = schema_output_dir
     copy_report = copy_generated_schemas_to_strapi(
         target_path,
-        source_dir=source_dir,
+        source_dir=resolved_schema_output_dir,
         dry_run=dry_run_copy,
     )
     report["steps"]["schemaCopy"] = copy_report
@@ -92,7 +97,7 @@ def run_strapi_sandbox_pipeline(
 
     seed_report = generate_strapi_seed_report(
         html_path,
-        output_dir=seed_output_dir,
+        output_dir=resolved_seed_output_dir,
         use_llm=use_llm,
         status=status,
     )
@@ -102,6 +107,7 @@ def run_strapi_sandbox_pipeline(
         return report
 
     report["isValid"] = True
+    report["seedPath"] = seed_report.get("seedWriteReport", {}).get("path")
     report["errors"] = []
     return report
 
@@ -131,6 +137,17 @@ def prefixed_errors(step_name: str, errors: list[Any]) -> list[str]:
     if not errors:
         return [f"{step_name}: failed without a detailed error"]
     return [f"{step_name}: {error}" for error in errors]
+
+
+def default_schema_output_dir(html_path: Path) -> Path:
+    return DEFAULT_RUN_OUTPUT_ROOT / safe_slug(html_path.stem)
+
+
+def safe_slug(value: str) -> str:
+    import re
+
+    slug = re.sub(r"[^a-zA-Z0-9]+", "-", value).strip("-").lower()
+    return slug or "html-page"
 
 
 def build_arg_parser() -> argparse.ArgumentParser:

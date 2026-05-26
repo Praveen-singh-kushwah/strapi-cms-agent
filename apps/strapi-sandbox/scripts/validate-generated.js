@@ -5,12 +5,15 @@ const MAX_OUTPUT_CHARS = 3000;
 
 function parseArgs(argv) {
   const options = {
+    seedPath: null,
     skipImport: false,
   };
 
   for (const arg of argv) {
     if (arg === '--skip-import') {
       options.skipImport = true;
+    } else {
+      options.seedPath = path.resolve(process.cwd(), arg);
     }
   }
 
@@ -145,6 +148,7 @@ function validateParsedJson(stepName, result) {
 function runValidation(options) {
   const report = {
     isValid: false,
+    seedPath: options.seedPath,
     steps: {},
     errors: [],
   };
@@ -157,7 +161,11 @@ function runValidation(options) {
     return report;
   }
 
-  const dryRunCommand = nodeScriptArgs('import-generated-seed.js', ['--dry-run']);
+  const dryRunArgs = ['--dry-run'];
+  if (options.seedPath) {
+    dryRunArgs.push(options.seedPath);
+  }
+  const dryRunCommand = nodeScriptArgs('import-generated-seed.js', dryRunArgs);
   const seedDryRun = validateParsedJson(
     'seedDryRun',
     runCommand('seedDryRun', dryRunCommand.command, dryRunCommand.args),
@@ -174,7 +182,8 @@ function runValidation(options) {
       skipped: true,
     };
   } else {
-    const importCommand = nodeScriptArgs('import-generated-seed.js');
+    const importArgs = options.seedPath ? [options.seedPath] : [];
+    const importCommand = nodeScriptArgs('import-generated-seed.js', importArgs);
     const seedImport = validateParsedJson(
       'seedImport',
       runCommand('seedImport', importCommand.command, importCommand.args),
@@ -186,7 +195,8 @@ function runValidation(options) {
     }
   }
 
-  const verifyCommand = nodeScriptArgs('verify-generated-seed.js');
+  const verifyArgs = options.seedPath ? [options.seedPath] : [];
+  const verifyCommand = nodeScriptArgs('verify-generated-seed.js', verifyArgs);
   const seedVerify = validateParsedJson(
     'seedVerify',
     runCommand('seedVerify', verifyCommand.command, verifyCommand.args),

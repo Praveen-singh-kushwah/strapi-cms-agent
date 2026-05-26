@@ -1,5 +1,6 @@
 """Run the full local Strapi sandbox validation flow from the repo root."""
 
+
 from __future__ import annotations
 
 import argparse
@@ -76,7 +77,12 @@ def run_full_validation(
         report["errors"] = prefixed_errors("aiPipeline", ai_result)
         return report
 
-    strapi_command = build_strapi_validation_command(node_path, skip_import=skip_import)
+    seed_path = extract_seed_path(ai_result)
+    if not seed_path:
+        report["errors"] = ["aiPipeline: generated seed path was not found in the AI pipeline report"]
+        return report
+
+    strapi_command = build_strapi_validation_command(node_path, seed_path=seed_path, skip_import=skip_import)
     strapi_result = run_json_command(
         "strapiValidation",
         strapi_command,
@@ -168,10 +174,11 @@ def build_ai_pipeline_command(
     return command
 
 
-def build_strapi_validation_command(node_path: Path, *, skip_import: bool) -> list[str]:
+def build_strapi_validation_command(node_path: Path, *, seed_path: str, skip_import: bool) -> list[str]:
     command = [
         str(node_path),
         str(STRAPI_SANDBOX_DIR / "scripts" / "validate-generated.js"),
+        seed_path,
     ]
     if skip_import:
         command.append("--skip-import")
@@ -274,6 +281,24 @@ def prefixed_errors(step_name: str, result: dict[str, Any]) -> list[str]:
     if result.get("error"):
         return [f"{step_name}: {result['error']}"]
     return [f"{step_name}: command failed with exit code {result['exitCode']}"]
+
+
+def extract_seed_path(ai_result: dict[str, Any]) -> str | None:
+    report = ai_result.get("report")
+    if not isinstance(report, dict):
+        return None
+
+    seed_path = report.get("seedPath")
+    if isinstance(seed_path, str) and seed_path:
+        return seed_path
+
+    seed_generation = ((report.get("steps") or {}).get("seedGeneration") or {})
+    if isinstance(seed_generation, dict):
+        nested_path = ((seed_generation.get("seedWriteReport") or {}).get("path"))
+        if isinstance(nested_path, str) and nested_path:
+            return nested_path
+
+    return None
 
 
 def build_arg_parser() -> argparse.ArgumentParser:

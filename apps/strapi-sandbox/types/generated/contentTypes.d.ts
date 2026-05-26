@@ -440,6 +440,37 @@ export interface AdminUser extends Struct.CollectionTypeSchema {
   };
 }
 
+export interface ApiCloudCostOptimisationIndiaFinopsAsAServiceTechbridgeReduceAwsAzureGcpBillPageCloudCostOptimisationIndiaFinopsAsAServiceTechbridgeReduceAwsAzureGcpBillPage
+  extends Struct.SingleTypeSchema {
+  collectionName: 'cloud_cost_optimisation_india_finops_as_a_service_techbridge_reduce_aws_azure_gcp_bill_pages';
+  info: {
+    description: 'CMS single type for Cloud Cost Optimisation India \u2014 FinOps as a Service | TechBridge | Reduce AWS \u00B7 Azure \u00B7 GCP Bill.';
+    displayName: 'Cloud Cost Optimisation India \u2014 FinOps as a Service | TechBridge | Reduce AWS \u00B7 Azure \u00B7 GCP Bill';
+    pluralName: 'cloud-cost-optimisation-india-finops-as-a-service-techbridge-reduce-aws-azure-gcp-bill-pages';
+    singularName: 'cloud-cost-optimisation-india-finops-as-a-service-techbridge-reduce-aws-azure-gcp-bill-page';
+  };
+  options: {
+    draftAndPublish: true;
+  };
+  attributes: {
+    createdAt: Schema.Attribute.DateTime;
+    createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+    hero: Schema.Attribute.Component<'landing-page.hero', false>;
+    locale: Schema.Attribute.String & Schema.Attribute.Private;
+    localizations: Schema.Attribute.Relation<
+      'oneToMany',
+      'api::cloud-cost-optimisation-india-finops-as-a-service-techbridge-reduce-aws-azure-gcp-bill-page.cloud-cost-optimisation-india-finops-as-a-service-techbridge-reduce-aws-azure-gcp-bill-page'
+    > &
+      Schema.Attribute.Private;
+    publishedAt: Schema.Attribute.DateTime;
+    seo: Schema.Attribute.Component<'shared.seo', false>;
+    updatedAt: Schema.Attribute.DateTime;
+    updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+  };
+}
+
 export interface ApiLandingPageLandingPage extends Struct.SingleTypeSchema {
   collectionName: 'landing_pages';
   info: {
@@ -989,6 +1020,7 @@ declare module '@strapi/strapi' {
       'admin::transfer-token': AdminTransferToken;
       'admin::transfer-token-permission': AdminTransferTokenPermission;
       'admin::user': AdminUser;
+      'api::cloud-cost-optimisation-india-finops-as-a-service-techbridge-reduce-aws-azure-gcp-bill-page.cloud-cost-optimisation-india-finops-as-a-service-techbridge-reduce-aws-azure-gcp-bill-page': ApiCloudCostOptimisationIndiaFinopsAsAServiceTechbridgeReduceAwsAzureGcpBillPageCloudCostOptimisationIndiaFinopsAsAServiceTechbridgeReduceAwsAzureGcpBillPage;
       'api::landing-page.landing-page': ApiLandingPageLandingPage;
       'plugin::content-releases.release': PluginContentReleasesRelease;
       'plugin::content-releases.release-action': PluginContentReleasesReleaseAction;
