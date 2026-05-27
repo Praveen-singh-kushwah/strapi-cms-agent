@@ -1,0 +1,40 @@
+{
+  "collectionName": "components_landing_page_content_section",
+  "info": {
+    "displayName": "Content Section"
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "eyebrow": {
+      "type": "string"
+    },
+    "title": {
+      "type": "string"
+    },
+    "description": {
+      "type": "text"
+    },
+    "body": {
+      "type": "text"
+    },
+    "items": {
+      "type": "component",
+      "component": "landing-page.content-item",
+      "repeatable": true
+    },
+    "actions": {
+      "type": "component",
+      "component": "shared.link",
+      "repeatable": true
+    },
+    "table": {
+      "type": "json"
+    },
+    "form": {
+      "type": "json"
+    },
+    "metadata": {
+      "type": "json"
+    }
+  }
+}

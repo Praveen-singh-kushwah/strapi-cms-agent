@@ -12,6 +12,7 @@ const DEFAULT_SEED_PATH = path.resolve(
   'seed',
   'landing-page.seed.json'
 );
+const JSON_FIELD_KEYS = new Set(['metadata', 'table']);
 
 function isKnownShutdownAbort(error) {
   return error && error.message === 'aborted';
@@ -95,6 +96,7 @@ function buildPopulateForValue(value) {
 
   const nestedPopulate = Object.fromEntries(
     Object.entries(value)
+      .filter(([key]) => !JSON_FIELD_KEYS.has(key))
       .filter(([, childValue]) => childValue && typeof childValue === 'object')
       .map(([key, childValue]) => [key, buildPopulateForValue(childValue)])
   );

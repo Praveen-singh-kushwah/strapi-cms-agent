@@ -239,6 +239,8 @@ class ContactSeed(StrictBaseModel):
 
 
 class SeedDataPlan(StrictBaseModel):
+    model_config = ConfigDict(extra="allow")
+
     seo: SeoSeed = Field(default_factory=SeoSeed)
     hero: HeroSeed | None = None
     features: ItemsSectionSeed | None = None

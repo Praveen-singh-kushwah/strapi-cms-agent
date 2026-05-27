@@ -264,7 +264,7 @@ def extract_structured_content(tag: Tag) -> dict[str, Any]:
 
 
 def extract_section_title_description(tag: Tag) -> dict[str, str]:
-    heading = extract_main_heading(tag)["text"]
+    heading = extract_main_heading(tag)["text"] or extract_prominent_label(tag)
     description = ""
 
     for paragraph in tag.find_all("p", recursive=False):
@@ -284,6 +284,14 @@ def extract_section_title_description(tag: Tag) -> dict[str, str]:
                         break
 
     return {"title": heading, "description": description}
+
+
+def extract_prominent_label(tag: Tag) -> str:
+    for candidate in tag.find_all(["span", "strong"], recursive=True):
+        text = clean_text(candidate.get_text(" "))
+        if 8 <= len(text) <= 160:
+            return text
+    return ""
 
 
 def extract_hero_content(tag: Tag) -> dict[str, Any]:
@@ -327,12 +335,33 @@ def extract_table(tag: Tag) -> dict[str, Any] | None:
 
     headers = [clean_text(th.get_text(" ")) for th in table.find_all("th")]
     rows = table.find_all("tr")
-    row_count = max(len(rows) - 1, 0) if headers else len(rows)
+    body_rows = []
+    for row in rows[1:] if headers else rows:
+        cells = [clean_text(cell.get_text(" ")) for cell in row.find_all(["td", "th"])]
+        if any(cells):
+            body_rows.append(cells)
 
     return {
         "headers": [header for header in headers if header],
-        "rowCount": row_count,
+        "rowCount": len(body_rows),
+        "rows": table_rows_as_records(headers, body_rows),
     }
+
+
+def table_rows_as_records(headers: list[str], rows: list[list[str]]) -> list[dict[str, str] | list[str]]:
+    clean_headers = [header for header in headers if header]
+    if not clean_headers:
+        return rows
+
+    records = []
+    for row in rows:
+        records.append(
+            {
+                clean_headers[index]: row[index]
+                for index in range(min(len(clean_headers), len(row)))
+            }
+        )
+    return records
 
 
 def extract_pricing_items(tag: Tag) -> list[dict[str, Any]]:
@@ -357,8 +386,8 @@ def extract_pricing_items(tag: Tag) -> list[dict[str, Any]]:
 def extract_faq_items(tag: Tag) -> list[dict[str, str]]:
     items = []
     for item in find_repeated_elements(tag, "faq-item"):
-        question = extract_main_heading(item)["text"]
-        answer_tag = item.find("p")
+        question = extract_faq_question(item)
+        answer_tag = find_class_containing(item, "faq-a", "answer") or item.find("p")
         items.append(
             {
                 "question": question,
@@ -380,19 +409,25 @@ def extract_faq_items(tag: Tag) -> list[dict[str, str]]:
     return items
 
 
+def extract_faq_question(item: Tag) -> str:
+    heading = extract_main_heading(item)["text"]
+    if heading:
+        return heading
+
+    question = find_class_containing(item, "faq-q", "question")
+    if not question:
+        return ""
+
+    for nested in question.find_all(recursive=True):
+        nested.decompose()
+    return clean_text(question.get_text(" "))
+
+
 def extract_testimonial_items(tag: Tag) -> list[dict[str, str]]:
     items = []
-    for card in find_repeated_elements(tag, "testimonial-card"):
-        quote = card.find("blockquote")
-        author = card.find(class_="author")
-        role = card.find(class_="role")
-        items.append(
-            {
-                "quote": clean_text(quote.get_text(" ")) if quote else "",
-                "authorName": clean_text(author.get_text(" ")) if author else "",
-                "authorRole": clean_text(role.get_text(" ")) if role else "",
-            }
-        )
+    cards = find_repeated_elements(tag, "testimonial-card") or find_repeated_elements(tag, "test-card")
+    for card in cards:
+        items.append(extract_testimonial_item(card))
     return items
 
 
@@ -461,6 +496,21 @@ def has_class(value: Any, class_name: str) -> bool:
     return class_name in value
 
 
+def find_class_containing(tag: Tag, *needles: str) -> Tag | None:
+    return tag.find(class_=lambda value: class_value_contains(value, needles))
+
+
+def class_value_contains(value: Any, needles: tuple[str, ...]) -> bool:
+    if not value:
+        return False
+    values = value.split() if isinstance(value, str) else value
+    return any(needle in str(class_name).lower() for class_name in values for needle in needles)
+
+
+def has_descendant_class_containing(tag: Tag, *needles: str) -> bool:
+    return find_class_containing(tag, *needles) is not None
+
+
 def detect_faq_pattern(tag: Tag) -> bool:
     structural = " ".join([clean_text(tag.get("id")), " ".join(get_classes(tag))]).lower()
     heading_text = " ".join(
@@ -469,6 +519,8 @@ def detect_faq_pattern(tag: Tag) -> bool:
     ).lower()
 
     if "faq" in structural or "frequently asked" in heading_text:
+        return True
+    if has_descendant_class_containing(tag, "faq"):
         return True
     if tag.find_all("details"):
         return True
@@ -510,7 +562,7 @@ def detect_repeated_groups(tag: Tag) -> list[dict[str, Any]]:
                 "fieldsDetected": infer_repeated_group_fields(sample, class_name),
                 "sampleItems": [
                     extract_repeated_item_sample(item, class_name)
-                    for item in elements_by_class[class_name][:3]
+                    for item in elements_by_class[class_name][:8]
                 ],
                 "hasHeading": bool(sample.find(["h3", "h4"])),
                 "hasDescription": bool(sample.find("p")),
@@ -590,9 +642,9 @@ def extract_faq_item(item: Tag) -> dict[str, str]:
 
 
 def extract_testimonial_item(card: Tag) -> dict[str, str]:
-    quote = card.find("blockquote")
-    author = card.find(class_="author")
-    role = card.find(class_="role")
+    quote = card.find("blockquote") or find_class_containing(card, "test-q", "quote")
+    author = card.find(class_="author") or find_class_containing(card, "test-name")
+    role = card.find(class_="role") or find_class_containing(card, "test-role")
     return {
         "quote": clean_text(quote.get_text(" ")) if quote else "",
         "authorName": clean_text(author.get_text(" ")) if author else "",
@@ -604,31 +656,48 @@ def extract_generic_card_item(card: Tag) -> dict[str, Any]:
     description = card.find("p")
     buttons = extract_buttons(card)
     images = extract_images(card)
+    text = extract_text_preview(card, limit=500)
+    value, label = split_value_label(text)
 
     return {
         "title": extract_main_heading(card)["text"],
         "description": clean_text(description.get_text(" ")) if description else "",
+        "text": text,
+        "value": value,
+        "label": label,
         "image": images[0] if images else None,
         "cta": buttons[0] if buttons else None,
     }
+
+
+def split_value_label(text: str) -> tuple[str, str]:
+    match = re.match(r"^([₹$]?[0-9][0-9,]*(?:\.\d+)?%?|[0-9]+(?:\.\d+)?[A-Za-z]+)\s+(.+)$", text)
+    if not match:
+        return "", ""
+    return match.group(1), match.group(2)
 
 
 def infer_semantic_hint(tag: Tag) -> str:
     structural = " ".join([tag.name or "", clean_text(tag.get("id")), " ".join(get_classes(tag))]).lower()
     heading = extract_main_heading(tag)["text"].lower()
 
-    for keyword in SECTION_KEYWORDS:
-        if contains_keyword(structural, keyword) or contains_keyword(heading, keyword):
-            return normalize_hint(keyword)
-
     if tag.name == "header":
         return "header"
     if tag.name == "footer":
         return "footer"
-    if tag.find("form"):
-        return "form"
+    if detect_faq_pattern(tag):
+        return "faq"
+    if has_descendant_class_containing(tag, "testimonial", "test-card") or tag.find("blockquote"):
+        return "testimonial"
+
+    for keyword in SECTION_KEYWORDS:
+        if contains_keyword(structural, keyword) or contains_keyword(heading, keyword):
+            return normalize_hint(keyword)
+
     if tag.find("table"):
         return "table"
+    if detect_form(tag):
+        return "form"
 
     return "unknown"
 

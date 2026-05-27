@@ -82,6 +82,20 @@ CANONICAL_COMPONENT_ALIASES = {
     "form-config": {"form-config", "contact-form", "form"},
     "form-field": {"form-field", "input-field"},
 }
+CANONICAL_COMPONENT_BY_HINT = {
+    "hero": "hero",
+    "feature": "features",
+    "testimonial": "testimonials",
+    "pricing": "pricing",
+    "faq": "faq",
+    "contact": "contact",
+    "form": "contact",
+}
+LAYOUT_SECTION_HINTS = {"header", "footer"}
+GENERIC_SECTION_COMPONENT = "content-section"
+GENERIC_ITEM_COMPONENT = "content-item"
+MAX_API_NAME_LENGTH = 54
+MAX_ATTRIBUTE_NAME_LENGTH = 56
 
 
 def llm_section_planner_node(state: AgentState) -> AgentState:
@@ -1393,11 +1407,11 @@ def generate_cms_plan(
 
 def build_page_model(html_analysis: dict[str, Any]) -> PageModel:
     title = html_analysis.get("page", {}).get("title", "")
-    api_name = "landing-page" if "landing" in title.lower() else slugify(title or "page")
+    display_name = page_display_name(title)
+    api_name = "landing-page" if "landing" in title.lower() else bounded_slug(display_name or title or "page")
     if not api_name.endswith("page"):
         api_name = f"{api_name}-page"
 
-    display_name = title.split(" - ")[0].strip() or "Landing Page"
     if "landing" in title.lower():
         display_name = "Landing Page"
 
@@ -1450,9 +1464,10 @@ def build_shared_section_components(
     for section in sections:
         hint = section.get("semanticHint", "unknown")
         builder = component_builders.get(hint)
-        if not builder:
-            continue
-        for component in builder(category, section):
+        components = builder(category, section) if builder else []
+        if not components and is_plannable_section(section):
+            components = generic_content_components(category)
+        for component in components:
             components_by_uid.setdefault(component.uid, component)
 
     return list(components_by_uid.values())
@@ -1626,6 +1641,46 @@ def contact_components(category: str, section: dict[str, Any] | None = None) -> 
     ]
 
 
+def generic_content_components(category: str) -> list[ComponentPlan]:
+    return [
+        ComponentPlan(
+            uid=f"{category}.{GENERIC_SECTION_COMPONENT}",
+            category=category,
+            displayName="Content Section",
+            fileName=GENERIC_SECTION_COMPONENT,
+            fields=[
+                FieldPlan(name="eyebrow", type="string"),
+                FieldPlan(name="title", type="string"),
+                FieldPlan(name="description", type="text"),
+                FieldPlan(name="body", type="text"),
+                FieldPlan(name="items", type="component", component=f"{category}.{GENERIC_ITEM_COMPONENT}", repeatable=True),
+                FieldPlan(name="actions", type="component", component="shared.link", repeatable=True),
+                FieldPlan(name="table", type="json"),
+                FieldPlan(name="form", type="json"),
+                FieldPlan(name="metadata", type="json"),
+            ],
+        ),
+        ComponentPlan(
+            uid=f"{category}.{GENERIC_ITEM_COMPONENT}",
+            category=category,
+            displayName="Content Item",
+            fileName=GENERIC_ITEM_COMPONENT,
+            fields=[
+                FieldPlan(name="title", type="string"),
+                FieldPlan(name="description", type="text"),
+                FieldPlan(name="text", type="text"),
+                FieldPlan(name="value", type="string"),
+                FieldPlan(name="label", type="string"),
+                FieldPlan(name="quote", type="text"),
+                FieldPlan(name="author_name", type="string"),
+                FieldPlan(name="author_role", type="string"),
+                FieldPlan(name="image", type="media", multiple=False, allowedTypes=["images"]),
+                FieldPlan(name="cta", type="component", component="shared.link", repeatable=False),
+            ],
+        ),
+    ]
+
+
 def section_title_fields(section: dict[str, Any] | None = None) -> list[FieldPlan]:
     fields = [FieldPlan(name="title", type="string", required=True)]
     if has_section_description(section):
@@ -1651,24 +1706,16 @@ def build_single_type_attributes(
         )
     ]
 
-    component_by_hint = {
-        "hero": "hero",
-        "feature": "features",
-        "testimonial": "testimonials",
-        "pricing": "pricing",
-        "faq": "faq",
-        "contact": "contact",
-        "form": "contact",
-    }
-
-    for section in html_analysis.get("candidateSections", []):
-        hint = section.get("semanticHint", "unknown")
-        file_name = component_by_hint.get(hint)
-        if not file_name:
+    sections = html_analysis.get("candidateSections", [])
+    attribute_names = section_attribute_names(sections)
+    for section in sections:
+        if not is_plannable_section(section):
             continue
+        hint = section.get("semanticHint", "unknown")
+        file_name = CANONICAL_COMPONENT_BY_HINT.get(hint, GENERIC_SECTION_COMPONENT)
         attributes.append(
             SingleTypeAttribute(
-                name=attribute_name_for_section(section),
+                name=attribute_names.get(section_key(section), attribute_name_for_section(section)),
                 type="component",
                 component=f"{category}.{file_name}",
                 repeatable=False,
@@ -1686,8 +1733,12 @@ def build_seed_data(html_analysis: dict[str, Any]) -> dict[str, Any]:
         }
     }
 
-    for section in html_analysis.get("candidateSections", []):
-        attr_name = attribute_name_for_section(section)
+    sections = html_analysis.get("candidateSections", [])
+    attribute_names = section_attribute_names(sections)
+    for section in sections:
+        if not is_plannable_section(section):
+            continue
+        attr_name = attribute_names.get(section_key(section), attribute_name_for_section(section))
         content = section.get("structuredContent", {})
         hint = section.get("semanticHint", "unknown")
 
@@ -1703,6 +1754,8 @@ def build_seed_data(html_analysis: dict[str, Any]) -> dict[str, Any]:
             seed_data[attr_name] = seed_faq(content)
         elif hint in ("contact", "form"):
             seed_data[attr_name] = seed_contact(content)
+        else:
+            seed_data[attr_name] = seed_generic_section(section)
 
     meta_description = first_non_empty(
         seed_data.get("hero", {}).get("description") if isinstance(seed_data.get("hero"), dict) else "",
@@ -1808,6 +1861,125 @@ def seed_contact(content: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def seed_generic_section(section: dict[str, Any]) -> dict[str, Any]:
+    content = section.get("structuredContent", {}) if isinstance(section, dict) else {}
+    title = first_non_empty(content.get("title"), section.get("heading"), first_subheading(section))
+    description = first_non_empty(content.get("description"), "")
+    buttons = section.get("buttons", []) if isinstance(section.get("buttons"), list) else []
+
+    return {
+        "eyebrow": section_eyebrow(section, title),
+        "title": title,
+        "description": description,
+        "body": first_non_empty(section.get("textPreview"), description),
+        "items": generic_items_from_section(section),
+        "actions": [link for link in (normalize_link(button) for button in buttons) if link],
+        "table": section.get("table"),
+        "form": first_non_empty_json(section.get("forms"), content.get("form")),
+        "metadata": {
+            "semanticHint": section.get("semanticHint", "unknown"),
+            "sourceSectionIndex": section.get("index"),
+            "id": section.get("id", ""),
+            "classes": section.get("classes", []),
+        },
+    }
+
+
+def generic_items_from_section(section: dict[str, Any]) -> list[dict[str, Any]]:
+    group = best_repeated_group(section.get("repeatedGroups", []))
+    if not group:
+        return []
+
+    return [
+        seed_generic_item(item)
+        for item in group.get("sampleItems", [])
+        if isinstance(item, dict) and has_meaningful_item_seed(item)
+    ]
+
+
+def best_repeated_group(groups: Any) -> dict[str, Any] | None:
+    if not isinstance(groups, list):
+        return None
+
+    scored_groups = [
+        (generic_group_score(group), group)
+        for group in groups
+        if isinstance(group, dict)
+    ]
+    scored_groups = [(score, group) for score, group in scored_groups if score > 0]
+    if not scored_groups:
+        return None
+    scored_groups.sort(key=lambda item: item[0], reverse=True)
+    return scored_groups[0][1]
+
+
+def generic_group_score(group: dict[str, Any]) -> int:
+    class_name = str(group.get("className") or "").lower()
+    ignored_classes = {"rv", "d1", "d2", "d3", "d4", "d5"}
+    ignored_fragments = ("orb", "bar", "fill", "num", "key", "stars", "av")
+    if class_name in ignored_classes or any(fragment in class_name for fragment in ignored_fragments):
+        return 0
+
+    fields = group.get("fieldsDetected", [])
+    sample_items = group.get("sampleItems", [])
+    sample_score = 0
+    if isinstance(sample_items, list):
+        sample_score = sum(1 for item in sample_items if isinstance(item, dict) and has_meaningful_item_seed(item))
+    return len(fields if isinstance(fields, list) else []) * 2 + sample_score
+
+
+def seed_generic_item(item: dict[str, Any]) -> dict[str, Any]:
+    text = str(item.get("text") or "").strip()
+    value = str(item.get("value") or "").strip()
+    label = str(item.get("label") or "").strip()
+    if not value and not label and text:
+        value, label = split_value_label(text)
+
+    return {
+        "title": item.get("title", ""),
+        "description": item.get("description", ""),
+        "text": text,
+        "value": value,
+        "label": label,
+        "quote": item.get("quote", ""),
+        "author_name": item.get("authorName", ""),
+        "author_role": item.get("authorRole", ""),
+        "image": item.get("image"),
+        "cta": normalize_link(item.get("cta")),
+    }
+
+
+def has_meaningful_item_seed(item: dict[str, Any]) -> bool:
+    meaningful_keys = ("title", "description", "text", "value", "label", "quote", "authorName", "authorRole")
+    return any(str(item.get(key) or "").strip() for key in meaningful_keys) or bool(item.get("image") or item.get("cta"))
+
+
+def section_eyebrow(section: dict[str, Any], title: str) -> str:
+    subheading = first_subheading(section)
+    if subheading and subheading != title:
+        return subheading
+    return ""
+
+
+def first_subheading(section: dict[str, Any]) -> str:
+    subheadings = section.get("subheadings")
+    if not isinstance(subheadings, list):
+        return ""
+    for subheading in subheadings:
+        if isinstance(subheading, dict):
+            text = str(subheading.get("text") or "").strip()
+            if text:
+                return text
+    return ""
+
+
+def first_non_empty_json(*values: Any) -> Any:
+    for value in values:
+        if value:
+            return value
+    return None
+
+
 def normalize_link(value: dict[str, Any] | None) -> dict[str, str] | None:
     if not value:
         return None
@@ -1826,23 +1998,136 @@ def first_non_empty(*values: Any) -> str:
 
 
 def build_warnings(html_analysis: dict[str, Any]) -> list[str]:
-    warnings = []
-    for section in html_analysis.get("candidateSections", []):
-        if section.get("semanticHint") == "unknown":
-            warnings.append(
-                f"Section {section.get('index')} could not be mapped to a known component type."
-            )
-    return warnings
+    fallback_indexes = [
+        str(section.get("index"))
+        for section in html_analysis.get("candidateSections", [])
+        if is_generic_fallback_section(section)
+    ]
+    if not fallback_indexes:
+        return []
+    return [
+        "Mapped non-canonical sections to the generic content-section component: "
+        + ", ".join(fallback_indexes)
+    ]
 
 
 def attribute_name_for_section(section: dict[str, Any]) -> str:
     hint = section.get("semanticHint", "section")
-    section_id = section.get("id") or hint
     if hint == "feature":
         return "features"
     if hint == "testimonial":
         return "testimonials"
-    return snake_case(section_id)
+    if hint in CANONICAL_COMPONENT_BY_HINT and hint not in {"form"}:
+        return snake_case(hint)
+
+    base = first_non_empty(
+        section.get("id"),
+        (section.get("structuredContent") or {}).get("title") if isinstance(section.get("structuredContent"), dict) else "",
+        section.get("heading"),
+        first_subheading(section),
+        meaningful_class_name(section),
+        f"section_{section.get('index', '')}",
+    )
+    return bounded_snake_case(base)
+
+
+def section_attribute_names(sections: list[dict[str, Any]]) -> dict[int, str]:
+    names: dict[int, str] = {}
+    used: set[str] = set()
+    for section in sections:
+        if not is_plannable_section(section):
+            continue
+        base_name = attribute_name_for_section(section)
+        name = unique_name(base_name, used, fallback_suffix=str(section.get("index", "")))
+        names[section_key(section)] = name
+    return names
+
+
+def section_key(section: dict[str, Any]) -> int:
+    index = section.get("index")
+    return index if isinstance(index, int) else id(section)
+
+
+def unique_name(base_name: str, used: set[str], *, fallback_suffix: str = "") -> str:
+    name = ensure_snake_identifier(base_name)
+    if name not in used:
+        used.add(name)
+        return name
+
+    suffix = snake_case(fallback_suffix) if fallback_suffix else "section"
+    suffix = suffix or "section"
+    candidate = ensure_snake_identifier(f"{name}_{suffix}")
+    counter = 2
+    while candidate in used:
+        candidate = ensure_snake_identifier(f"{name}_{counter}")
+        counter += 1
+    used.add(candidate)
+    return candidate
+
+
+def is_plannable_section(section: dict[str, Any]) -> bool:
+    return section.get("semanticHint") not in LAYOUT_SECTION_HINTS
+
+
+def is_generic_fallback_section(section: dict[str, Any]) -> bool:
+    return is_plannable_section(section) and section.get("semanticHint") not in CANONICAL_COMPONENT_BY_HINT
+
+
+def meaningful_class_name(section: dict[str, Any]) -> str:
+    classes = section.get("classes")
+    if not isinstance(classes, list):
+        return ""
+    ignored = {"container", "wrapper", "row", "col", "grid", "inner", "content", "layout", "ps", "rv"}
+    for class_name in classes:
+        normalized = str(class_name or "").strip().lower()
+        if normalized and normalized not in ignored:
+            return normalized
+    return ""
+
+
+def page_display_name(title: str) -> str:
+    separators = (" | ", " — ", " – ", " - ")
+    positions = [(title.find(separator), separator) for separator in separators if separator in title]
+    if positions:
+        _, separator = min(positions, key=lambda item: item[0])
+        return title.split(separator, 1)[0].strip() or title.strip() or "Landing Page"
+    return title.strip() or "Landing Page"
+
+
+def bounded_slug(value: str, max_length: int = MAX_API_NAME_LENGTH) -> str:
+    words = slugify(value).split("-")
+    result_words: list[str] = []
+    for word in words:
+        candidate = "-".join([*result_words, word]) if result_words else word
+        if len(candidate) > max_length:
+            break
+        result_words.append(word)
+    return "-".join(result_words) or "page"
+
+
+def bounded_snake_case(value: str, max_length: int = MAX_ATTRIBUTE_NAME_LENGTH) -> str:
+    words = snake_case(value).split("_")
+    result_words: list[str] = []
+    for word in words:
+        candidate = "_".join([*result_words, word]) if result_words else word
+        if len(candidate) > max_length:
+            break
+        result_words.append(word)
+    return ensure_snake_identifier("_".join(result_words) or "section")
+
+
+def ensure_snake_identifier(value: str) -> str:
+    result = snake_case(value)
+    if not result or not result[0].isalpha():
+        result = f"section_{result}" if result else "section"
+    return result
+
+
+def split_value_label(text: str) -> tuple[str, str]:
+    match = re.match(r"^([₹$]?[0-9][0-9,]*(?:\.\d+)?%?|[0-9]+(?:\.\d+)?[A-Za-z]+)\s+(.+)$", text)
+    if not match:
+        return "", ""
+    return match.group(1), match.group(2)
 
 
 def slugify(value: str) -> str:

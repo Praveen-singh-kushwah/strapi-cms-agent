@@ -154,7 +154,7 @@ def transform_component_seed(
                 warnings.append(f"{path}.{field.name}: required field has no seed value")
             continue
 
-        if should_omit_empty_optional_scalar(field, value[field.name]):
+        if should_omit_empty_optional_value(field, value[field.name]):
             continue
 
         result[field.name] = transform_seed_value(
@@ -169,13 +169,12 @@ def transform_component_seed(
     return result
 
 
-def should_omit_empty_optional_scalar(field: FieldPlan, value: Any) -> bool:
-    return (
-        not field.required
-        and field.type in {"string", "text", "richtext", "email"}
-        and isinstance(value, str)
-        and not value.strip()
-    )
+def should_omit_empty_optional_value(field: FieldPlan, value: Any) -> bool:
+    if field.required:
+        return False
+    if value is None:
+        return True
+    return field.type in {"string", "text", "richtext", "email"} and isinstance(value, str) and not value.strip()
 
 
 def is_empty_optional_extra_value(value: Any) -> bool:
