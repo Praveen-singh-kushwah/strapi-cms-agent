@@ -29,6 +29,7 @@ def run_full_validation(
     node_bin: str | Path | None = None,
     npm_cli: str | Path | None = None,
     use_llm: bool = False,
+    use_llm_section_analysis: bool = False,
     skip_snapshot: bool = False,
     dry_run_copy: bool = False,
     skip_import: bool = False,
@@ -63,6 +64,7 @@ def run_full_validation(
         python_path,
         html_path,
         use_llm=use_llm,
+        use_llm_section_analysis=use_llm_section_analysis,
         skip_snapshot=skip_snapshot,
         dry_run_copy=dry_run_copy,
     )
@@ -154,6 +156,7 @@ def build_ai_pipeline_command(
     html_file: Path,
     *,
     use_llm: bool,
+    use_llm_section_analysis: bool,
     skip_snapshot: bool,
     dry_run_copy: bool,
 ) -> list[str]:
@@ -166,6 +169,8 @@ def build_ai_pipeline_command(
 
     if use_llm:
         command.append("--use-llm")
+    if use_llm_section_analysis:
+        command.append("--use-llm-section-analysis")
     if skip_snapshot:
         command.append("--skip-snapshot")
     if dry_run_copy:
@@ -328,6 +333,14 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Use the configured LLM planner for the AI-side pipeline.",
     )
     parser.add_argument(
+        "--use-llm-section-analysis",
+        action="store_true",
+        help=(
+            "Use section-level LLM enrichment before CMS planning in the AI-side pipeline. "
+            "This can be used with or without --use-llm."
+        ),
+    )
+    parser.add_argument(
         "--skip-snapshot",
         action="store_true",
         help="Skip schema snapshot checking in the AI-side pipeline.",
@@ -355,6 +368,7 @@ def main(argv: list[str] | None = None) -> int:
         node_bin=args.node_bin,
         npm_cli=args.npm_cli,
         use_llm=args.use_llm,
+        use_llm_section_analysis=args.use_llm_section_analysis,
         skip_snapshot=args.skip_snapshot,
         dry_run_copy=args.dry_run_copy,
         skip_import=args.skip_import,

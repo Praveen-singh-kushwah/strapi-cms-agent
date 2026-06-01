@@ -8,9 +8,9 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from src.html_analysis_pipeline import prepare_html_analysis_for_planning
 from src.schema_planner import llm_section_planner_node
 from src.schema_validator import validate_cms_plan
-from src.section_detector import analyze_html_file
 from src.strapi_schema_generator import validate_generated_schema_files, write_strapi_schema_files
 
 
@@ -19,6 +19,7 @@ def generate_strapi_schema_report(
     *,
     output_dir: str | Path | None = None,
     use_llm: bool = False,
+    use_llm_section_analysis: bool = False,
     draft_and_publish: bool = True,
 ) -> dict[str, Any]:
     """Run the full HTML -> CMS plan -> Strapi schema generation flow."""
@@ -27,6 +28,8 @@ def generate_strapi_schema_report(
         "isValid": False,
         "htmlFile": str(html_path),
         "usedLLM": use_llm,
+        "usedLLMSectionAnalysis": use_llm_section_analysis,
+        "sectionAnalysis": None,
         "planValidation": None,
         "writeReport": None,
         "generatedValidation": None,
@@ -34,11 +37,17 @@ def generate_strapi_schema_report(
     }
 
     try:
-        analysis = analyze_html_file(html_path)
+        planner_context = {"useLLM": use_llm}
+        analysis = prepare_html_analysis_for_planning(
+            html_path,
+            use_llm_section_analysis=use_llm_section_analysis,
+            planner_context=planner_context,
+        )
+        report["sectionAnalysis"] = analysis.get("sectionAnalysis")
         state = llm_section_planner_node(
             {
                 "html_analysis": analysis,
-                "planner_context": {"useLLM": use_llm},
+                "planner_context": planner_context,
                 "errors": [],
             }
         )
@@ -88,6 +97,14 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Use the configured LLM planner. By default this command uses the deterministic planner.",
     )
     parser.add_argument(
+        "--use-llm-section-analysis",
+        action="store_true",
+        help=(
+            "Enrich each detected section with an LLM before CMS planning. "
+            "This is separate from --use-llm."
+        ),
+    )
+    parser.add_argument(
         "--no-draft-and-publish",
         action="store_true",
         help="Set Strapi options.draftAndPublish to false in the generated content type schema.",
@@ -103,6 +120,7 @@ def main(argv: list[str] | None = None) -> int:
         args.html_file,
         output_dir=args.output_dir,
         use_llm=args.use_llm,
+        use_llm_section_analysis=args.use_llm_section_analysis,
         draft_and_publish=not args.no_draft_and_publish,
     )
     print(json.dumps(report, indent=2))

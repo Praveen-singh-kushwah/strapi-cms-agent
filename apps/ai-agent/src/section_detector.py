@@ -68,7 +68,7 @@ SECTION_TAGS = ("section", "article", "header", "footer")
 FORM_FIELD_TAGS = ("input", "textarea", "select")
 
 
-def analyze_html_file(file_path: str | Path) -> dict[str, Any]:
+def analyze_html_file(file_path: str | Path, *, include_raw_html: bool = False) -> dict[str, Any]:
     """Analyze an HTML file and return clean candidate sections for LLM input."""
     html = load_html_from_file(file_path)
     soup = parse_html(html)
@@ -76,7 +76,7 @@ def analyze_html_file(file_path: str | Path) -> dict[str, Any]:
     candidates = find_candidate_sections(root)
 
     sections = [
-        build_candidate_section(index, candidate)
+        build_candidate_section(index, candidate, include_raw_html=include_raw_html)
         for index, candidate in enumerate(candidates, start=1)
     ]
 
@@ -205,7 +205,7 @@ def source_text(tag: Tag) -> str:
     return " ".join(values).lower()
 
 
-def build_candidate_section(index: int, candidate: Tag) -> dict[str, Any]:
+def build_candidate_section(index: int, candidate: Tag, *, include_raw_html: bool = False) -> dict[str, Any]:
     heading = extract_main_heading(candidate)
     table = extract_table(candidate)
     repeated_groups = detect_repeated_groups(candidate)
@@ -215,7 +215,7 @@ def build_candidate_section(index: int, candidate: Tag) -> dict[str, Any]:
     has_form = detect_form(candidate)
     has_faq_pattern = detect_faq_pattern(candidate)
 
-    return {
+    section = {
         "index": index,
         "semanticHint": infer_semantic_hint(candidate),
         "tag": candidate.name,
@@ -241,6 +241,11 @@ def build_candidate_section(index: int, candidate: Tag) -> dict[str, Any]:
         "forms": forms,
         "repeatedGroups": repeated_groups,
     }
+
+    if include_raw_html:
+        section["rawHtml"] = str(candidate)
+
+    return section
 
 
 def extract_structured_content(tag: Tag) -> dict[str, Any]:

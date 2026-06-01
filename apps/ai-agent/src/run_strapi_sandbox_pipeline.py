@@ -27,6 +27,7 @@ def run_strapi_sandbox_pipeline(
     seed_output_dir: str | Path | None = None,
     snapshot_path: str | Path = DEFAULT_SNAPSHOT_PATH,
     use_llm: bool = False,
+    use_llm_section_analysis: bool = False,
     skip_snapshot: bool = False,
     dry_run_copy: bool = False,
     status: str = "published",
@@ -42,6 +43,7 @@ def run_strapi_sandbox_pipeline(
         "htmlFile": str(html_path),
         "targetDir": str(target_path),
         "usedLLM": use_llm,
+        "usedLLMSectionAnalysis": use_llm_section_analysis,
         "schemaOutputDir": str(resolved_schema_output_dir),
         "seedOutputDir": str(resolved_seed_output_dir),
         "seedPath": None,
@@ -59,6 +61,7 @@ def run_strapi_sandbox_pipeline(
         html_path,
         output_dir=resolved_schema_output_dir,
         use_llm=use_llm,
+        use_llm_section_analysis=use_llm_section_analysis,
         draft_and_publish=draft_and_publish,
     )
     report["steps"]["schemaGeneration"] = schema_report
@@ -72,6 +75,7 @@ def run_strapi_sandbox_pipeline(
             snapshot_path=snapshot_path,
             output_dir=resolved_schema_output_dir,
             use_llm=use_llm,
+            use_llm_section_analysis=use_llm_section_analysis,
             draft_and_publish=draft_and_publish,
         )
         report["steps"]["snapshotCheck"] = snapshot_report
@@ -99,6 +103,7 @@ def run_strapi_sandbox_pipeline(
         html_path,
         output_dir=resolved_seed_output_dir,
         use_llm=use_llm,
+        use_llm_section_analysis=use_llm_section_analysis,
         status=status,
     )
     report["steps"]["seedGeneration"] = seed_report
@@ -195,6 +200,14 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Use the configured LLM planner. By default this command uses the deterministic planner.",
     )
     parser.add_argument(
+        "--use-llm-section-analysis",
+        action="store_true",
+        help=(
+            "Enrich each detected section with an LLM before CMS planning. "
+            "This can be used with or without --use-llm."
+        ),
+    )
+    parser.add_argument(
         "--status",
         choices=("draft", "published"),
         default="published",
@@ -219,6 +232,7 @@ def main(argv: list[str] | None = None) -> int:
         seed_output_dir=args.seed_output_dir,
         snapshot_path=args.snapshot,
         use_llm=args.use_llm,
+        use_llm_section_analysis=args.use_llm_section_analysis,
         skip_snapshot=args.skip_snapshot,
         dry_run_copy=args.dry_run_copy,
         status=args.status,

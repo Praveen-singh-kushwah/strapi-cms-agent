@@ -21,6 +21,7 @@ def generate_schema_snapshot(
     *,
     output_dir: str | Path | None = None,
     use_llm: bool = False,
+    use_llm_section_analysis: bool = False,
     draft_and_publish: bool = True,
 ) -> dict[str, Any]:
     """Generate a stable snapshot report from the full schema generation report."""
@@ -28,6 +29,7 @@ def generate_schema_snapshot(
         html_file,
         output_dir=output_dir,
         use_llm=use_llm,
+        use_llm_section_analysis=use_llm_section_analysis,
         draft_and_publish=draft_and_publish,
     )
     return normalize_schema_report(report)
@@ -90,6 +92,7 @@ def check_schema_snapshot(
     snapshot_path: str | Path = DEFAULT_SNAPSHOT_PATH,
     output_dir: str | Path | None = None,
     use_llm: bool = False,
+    use_llm_section_analysis: bool = False,
     draft_and_publish: bool = True,
 ) -> dict[str, Any]:
     """Compare the current generated schema snapshot with an expected snapshot file."""
@@ -98,6 +101,7 @@ def check_schema_snapshot(
         html_file,
         output_dir=output_dir,
         use_llm=use_llm,
+        use_llm_section_analysis=use_llm_section_analysis,
         draft_and_publish=draft_and_publish,
     )
 
@@ -127,6 +131,7 @@ def update_schema_snapshot(
     snapshot_path: str | Path = DEFAULT_SNAPSHOT_PATH,
     output_dir: str | Path | None = None,
     use_llm: bool = False,
+    use_llm_section_analysis: bool = False,
     draft_and_publish: bool = True,
 ) -> dict[str, Any]:
     """Write the current generated schema snapshot to disk."""
@@ -135,6 +140,7 @@ def update_schema_snapshot(
         html_file,
         output_dir=output_dir,
         use_llm=use_llm,
+        use_llm_section_analysis=use_llm_section_analysis,
         draft_and_publish=draft_and_publish,
     )
     snapshot_file.parent.mkdir(parents=True, exist_ok=True)
@@ -196,6 +202,14 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Use the configured LLM planner. Snapshot checks should usually stay deterministic.",
     )
     parser.add_argument(
+        "--use-llm-section-analysis",
+        action="store_true",
+        help=(
+            "Enrich each detected section with an LLM before snapshot schema planning. "
+            "Snapshot checks should usually stay deterministic."
+        ),
+    )
+    parser.add_argument(
         "--no-draft-and-publish",
         action="store_true",
         help="Set Strapi options.draftAndPublish to false in the generated content type schema.",
@@ -211,6 +225,7 @@ def main(argv: list[str] | None = None) -> int:
         "snapshot_path": args.snapshot,
         "output_dir": args.output_dir,
         "use_llm": args.use_llm,
+        "use_llm_section_analysis": args.use_llm_section_analysis,
         "draft_and_publish": not args.no_draft_and_publish,
     }
     report = (
