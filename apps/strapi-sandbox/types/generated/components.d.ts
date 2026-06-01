@@ -12,6 +12,43 @@ export interface LandingPageContact extends Struct.ComponentSchema {
   };
 }
 
+export interface LandingPageContentItem extends Struct.ComponentSchema {
+  collectionName: 'components_landing_page_content_item';
+  info: {
+    displayName: 'Content Item';
+  };
+  attributes: {
+    author_name: Schema.Attribute.String;
+    author_role: Schema.Attribute.String;
+    cta: Schema.Attribute.Component<'shared.link', false>;
+    description: Schema.Attribute.Text;
+    image: Schema.Attribute.Media<'images'>;
+    label: Schema.Attribute.String;
+    quote: Schema.Attribute.Text;
+    text: Schema.Attribute.Text;
+    title: Schema.Attribute.String;
+    value: Schema.Attribute.String;
+  };
+}
+
+export interface LandingPageContentSection extends Struct.ComponentSchema {
+  collectionName: 'components_landing_page_content_section';
+  info: {
+    displayName: 'Content Section';
+  };
+  attributes: {
+    actions: Schema.Attribute.Component<'shared.link', true>;
+    body: Schema.Attribute.Text;
+    description: Schema.Attribute.Text;
+    eyebrow: Schema.Attribute.String;
+    form: Schema.Attribute.JSON;
+    items: Schema.Attribute.Component<'landing-page.content-item', true>;
+    metadata: Schema.Attribute.JSON;
+    table: Schema.Attribute.JSON;
+    title: Schema.Attribute.String;
+  };
+}
+
 export interface LandingPageFaq extends Struct.ComponentSchema {
   collectionName: 'components_landing_page_faq';
   info: {
@@ -182,6 +219,8 @@ declare module '@strapi/strapi' {
   export module Public {
     export interface ComponentSchemas {
       'landing-page.contact': LandingPageContact;
+      'landing-page.content-item': LandingPageContentItem;
+      'landing-page.content-section': LandingPageContentSection;
       'landing-page.faq': LandingPageFaq;
       'landing-page.faq-item': LandingPageFaqItem;
       'landing-page.feature-card': LandingPageFeatureCard;
