@@ -26,6 +26,8 @@ from src.schema_planner import (
 
 
 SEMANTIC_HINTS = (
+    "header",
+    "footer",
     "hero",
     "intro",
     "feature",
@@ -48,6 +50,7 @@ SEMANTIC_HINTS = (
     "trust",
     "unknown",
 )
+LAYOUT_SEMANTIC_HINTS = {"header", "footer"}
 DEFAULT_MAX_SECTION_HTML_CHARS = 12000
 DEFAULT_MAX_TEXT_PREVIEW_CHARS = 1200
 
@@ -148,10 +151,16 @@ def analyze_sections_with_llm(
         raise ValueError("html_analysis.candidateSections must be a list")
 
     errors: list[str] = []
+    skipped_sections: list[int] = []
     enriched_sections = []
     for index, section in enumerate(sections):
         previous_section = sections[index - 1] if index > 0 else None
         next_section = sections[index + 1] if index + 1 < len(sections) else None
+        if is_layout_section(section):
+            enriched_sections.append(deepcopy(section))
+            skipped_sections.append(int(section.get("index") or index + 1))
+            continue
+
         try:
             enriched = analyze_one_section_with_llm(
                 result,
@@ -168,11 +177,13 @@ def analyze_sections_with_llm(
             errors.append(f"Section {section.get('index', index + 1)}: {exc}")
 
     result["candidateSections"] = enriched_sections
-    successful_section_count = len(enriched_sections) - len(errors)
+    successful_section_count = len(enriched_sections) - len(errors) - len(skipped_sections)
     result["sectionAnalysis"] = {
         "usedLLM": True,
         "sectionCount": len(enriched_sections),
         "successfulSectionCount": successful_section_count,
+        "skippedSectionCount": len(skipped_sections),
+        "skippedSections": skipped_sections,
         "errorCount": len(errors),
         "errors": errors,
     }
@@ -397,8 +408,11 @@ def merge_enriched_section(
             f"LLM returned section index {enriched.index}; kept deterministic index {deterministic_section.get('index')}"
         )
 
+    layout_hint = layout_semantic_hint(deterministic_section)
     semantic_hint = normalize_semantic_hint(enriched.semanticHint)
-    if semantic_hint:
+    if layout_hint:
+        merged["semanticHint"] = layout_hint
+    elif semantic_hint:
         merged["semanticHint"] = semantic_hint
     if enriched.sectionType:
         merged["sectionType"] = snake_case(enriched.sectionType)
@@ -441,6 +455,20 @@ def merge_enriched_section(
         merged["warnings"] = dedupe_messages(warnings)
     merged["structuredContent"] = structured_content
     return merged
+
+
+def is_layout_section(section: dict[str, Any]) -> bool:
+    return bool(layout_semantic_hint(section))
+
+
+def layout_semantic_hint(section: dict[str, Any]) -> str:
+    hint = snake_case(str(section.get("semanticHint") or ""))
+    tag = snake_case(str(section.get("tag") or ""))
+    if hint in LAYOUT_SEMANTIC_HINTS:
+        return hint
+    if tag in LAYOUT_SEMANTIC_HINTS:
+        return tag
+    return ""
 
 
 def validate_section_analysis_content(content: str) -> EnrichedCandidateSection:

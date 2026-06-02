@@ -9,6 +9,9 @@
       "type": "string",
       "required": true
     },
+    "description": {
+      "type": "text"
+    },
     "items": {
       "type": "component",
       "component": "landing-page.faq-item",

@@ -47,9 +47,9 @@
       "component": "landing-page.content-section",
       "repeatable": false
     },
-    "every_lever_of_cloud_cost_reduction_across_aws_azure_and": {
+    "features": {
       "type": "component",
-      "component": "landing-page.content-section",
+      "component": "landing-page.features",
       "repeatable": false
     },
     "the_money_arrives_before_the_second_invoice_does": {
@@ -77,7 +77,7 @@
       "component": "landing-page.faq",
       "repeatable": false
     },
-    "find_out_exactly_what_you_re_wasting_before_the_next": {
+    "find_out_exactly_what_you_re_wasting": {
       "type": "component",
       "component": "landing-page.content-section",
       "repeatable": false
