@@ -53,6 +53,7 @@ SEMANTIC_HINTS = (
 LAYOUT_SEMANTIC_HINTS = {"header", "footer"}
 DEFAULT_MAX_SECTION_HTML_CHARS = 12000
 DEFAULT_MAX_TEXT_PREVIEW_CHARS = 1200
+DEBUG_TEXT_PREVIEW_CHARS = 140
 
 
 class SectionAction(BaseModel):
@@ -152,13 +153,16 @@ def analyze_sections_with_llm(
 
     errors: list[str] = []
     skipped_sections: list[int] = []
+    section_statuses: dict[int, str] = {}
     enriched_sections = []
     for index, section in enumerate(sections):
         previous_section = sections[index - 1] if index > 0 else None
         next_section = sections[index + 1] if index + 1 < len(sections) else None
+        section_index = int(section.get("index") or index + 1)
         if is_layout_section(section):
             enriched_sections.append(deepcopy(section))
-            skipped_sections.append(int(section.get("index") or index + 1))
+            skipped_sections.append(section_index)
+            section_statuses[section_index] = "skipped_layout"
             continue
 
         try:
@@ -170,11 +174,13 @@ def analyze_sections_with_llm(
                 planner_context=context,
             )
             enriched_sections.append(merge_enriched_section(section, enriched))
+            section_statuses[section_index] = "enriched"
         except Exception as exc:  # pragma: no cover - network/model dependent
             fallback = deepcopy(section)
             fallback.setdefault("warnings", []).append(f"LLM section analysis failed: {exc}")
             enriched_sections.append(fallback)
             errors.append(f"Section {section.get('index', index + 1)}: {exc}")
+            section_statuses[section_index] = "fallback_error"
 
     result["candidateSections"] = enriched_sections
     successful_section_count = len(enriched_sections) - len(errors) - len(skipped_sections)
@@ -186,6 +192,13 @@ def analyze_sections_with_llm(
         "skippedSections": skipped_sections,
         "errorCount": len(errors),
         "errors": errors,
+        "sections": [
+            summarize_enriched_section(
+                section,
+                status=section_statuses.get(int(section.get("index") or index + 1), "unknown"),
+            )
+            for index, section in enumerate(enriched_sections)
+        ],
     }
     return result
 
@@ -468,6 +481,67 @@ def layout_semantic_hint(section: dict[str, Any]) -> str:
         return hint
     if tag in LAYOUT_SEMANTIC_HINTS:
         return tag
+    return ""
+
+
+def summarize_enriched_section(section: dict[str, Any], *, status: str) -> dict[str, Any]:
+    """Return compact debug metadata for reports without raw HTML/content blobs."""
+    content = section.get("structuredContent") if isinstance(section.get("structuredContent"), dict) else {}
+    table = first_mapping(section.get("table"), content.get("table"))
+    form = first_mapping(content.get("form"), first_list_item(section.get("forms")))
+    media = first_list(content.get("media"), section.get("images"))
+    actions = first_list(content.get("actions"), section.get("buttons"))
+    items = first_list(content.get("items"))
+
+    return drop_empty_values(
+        {
+            "index": section.get("index"),
+            "status": status,
+            "tag": section.get("tag"),
+            "semanticHint": section.get("semanticHint"),
+            "sectionType": section.get("sectionType", ""),
+            "title": truncate_text(
+                first_non_empty_value(
+                    content.get("title"),
+                    section.get("heading", {}).get("text") if isinstance(section.get("heading"), dict) else "",
+                ),
+                DEBUG_TEXT_PREVIEW_CHARS,
+            ),
+            "eyebrow": truncate_text(str(content.get("eyebrow") or ""), DEBUG_TEXT_PREVIEW_CHARS),
+            "itemCount": len(items),
+            "actionCount": len(actions),
+            "tableRowCount": len(table.get("rows", [])) if isinstance(table.get("rows"), list) else 0,
+            "formFieldCount": len(form.get("fields", [])) if isinstance(form.get("fields"), list) else 0,
+            "mediaCount": len(media),
+            "llmConfidence": section.get("llmConfidence"),
+            "warnings": section.get("warnings", []),
+        }
+    )
+
+
+def first_list(*values: Any) -> list[Any]:
+    for value in values:
+        if isinstance(value, list):
+            return value
+    return []
+
+
+def first_mapping(*values: Any) -> dict[str, Any]:
+    for value in values:
+        if isinstance(value, dict):
+            return value
+    return {}
+
+
+def first_list_item(value: Any) -> Any:
+    return value[0] if isinstance(value, list) and value else None
+
+
+def first_non_empty_value(*values: Any) -> str:
+    for value in values:
+        text = str(value or "").strip()
+        if text:
+            return text
     return ""
 
 
