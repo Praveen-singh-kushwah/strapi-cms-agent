@@ -51,7 +51,7 @@ export interface AdminApiToken extends Struct.CollectionTypeSchema {
     lifespan: Schema.Attribute.BigInteger;
     locale: Schema.Attribute.String & Schema.Attribute.Private;
     localizations: Schema.Attribute.Relation<'oneToMany', 'admin::api-token'> &
-      Schema.Attribute.Private;  
+      Schema.Attribute.Private;
     name: Schema.Attribute.String &
       Schema.Attribute.Required &
       Schema.Attribute.Unique &
@@ -437,6 +437,79 @@ export interface AdminUser extends Struct.CollectionTypeSchema {
     updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
       Schema.Attribute.Private;
     username: Schema.Attribute.String;
+  };
+}
+
+export interface ApiCloudCostOptimisationIndiaPageCloudCostOptimisationIndiaPage
+  extends Struct.SingleTypeSchema {
+  collectionName: 'cloud_cost_optimisation_india_pages';
+  info: {
+    description: 'CMS single type for Cloud Cost Optimisation India.';
+    displayName: 'Cloud Cost Optimisation India';
+    pluralName: 'cloud-cost-optimisation-india-pages';
+    singularName: 'cloud-cost-optimisation-india-page';
+  };
+  options: {
+    draftAndPublish: true;
+  };
+  attributes: {
+    actual_savings_delivered_actual_numbers: Schema.Attribute.Component<
+      'landing-page.results-table',
+      false
+    >;
+    average_cloud_waste_in_indian_mid_market: Schema.Attribute.Component<
+      'landing-page.stats-band',
+      false
+    >;
+    calculator: Schema.Attribute.Component<'landing-page.calculator', false>;
+    createdAt: Schema.Attribute.DateTime;
+    createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+    every_lever_of_cloud_cost_reduction_across_aws_azure_and: Schema.Attribute.Component<
+      'landing-page.content-section',
+      false
+    >;
+    faq: Schema.Attribute.Component<'landing-page.faq', false>;
+    find_out_exactly_what_you_re_wasting_before_the_next: Schema.Attribute.Component<
+      'landing-page.cta',
+      false
+    >;
+    from_audit_to_savings_in_90_days_no_disruption_no: Schema.Attribute.Component<
+      'landing-page.content-section',
+      false
+    >;
+    hero: Schema.Attribute.Component<'landing-page.hero', false>;
+    locale: Schema.Attribute.String & Schema.Attribute.Private;
+    localizations: Schema.Attribute.Relation<
+      'oneToMany',
+      'api::cloud-cost-optimisation-india-page.cloud-cost-optimisation-india-page'
+    > &
+      Schema.Attribute.Private;
+    publishedAt: Schema.Attribute.DateTime;
+    quick_answer_how_much_can_i_reduce_my_aws_azure_bill_in: Schema.Attribute.Component<
+      'landing-page.content-section',
+      false
+    >;
+    section_20_savings_in_90_days_or_we_pay_the_difference: Schema.Attribute.Component<
+      'landing-page.guarantee',
+      false
+    >;
+    seo: Schema.Attribute.Component<'shared.seo', false>;
+    testimonials: Schema.Attribute.Component<
+      'landing-page.testimonials',
+      false
+    >;
+    the_money_arrives_before_the_second_invoice_does: Schema.Attribute.Component<
+      'landing-page.content-section',
+      false
+    >;
+    updatedAt: Schema.Attribute.DateTime;
+    updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+    where_indian_companies_are_bleeding_cloud_cash_and_why: Schema.Attribute.Component<
+      'landing-page.content-section',
+      false
+    >;
   };
 }
 
@@ -989,6 +1062,7 @@ declare module '@strapi/strapi' {
       'admin::transfer-token': AdminTransferToken;
       'admin::transfer-token-permission': AdminTransferTokenPermission;
       'admin::user': AdminUser;
+      'api::cloud-cost-optimisation-india-page.cloud-cost-optimisation-india-page': ApiCloudCostOptimisationIndiaPageCloudCostOptimisationIndiaPage;
       'api::landing-page.landing-page': ApiLandingPageLandingPage;
       'plugin::content-releases.release': PluginContentReleasesRelease;
       'plugin::content-releases.release-action': PluginContentReleasesReleaseAction;

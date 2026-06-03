@@ -12,7 +12,7 @@ const DEFAULT_SEED_PATH = path.resolve(
   'seed',
   'landing-page.seed.json'
 );
-const JSON_FIELD_KEYS = new Set(['metadata', 'table']);
+const POPULATABLE_ATTRIBUTE_TYPES = new Set(['component', 'dynamiczone', 'media', 'relation']);
 
 function isKnownShutdownAbort(error) {
   return error && error.message === 'aborted';
@@ -68,12 +68,8 @@ function readSeed(seedPath) {
   return seed;
 }
 
-function buildPopulate(data, mediaPlan) {
-  const populate = Object.fromEntries(
-    Object.entries(data)
-      .filter(([, value]) => value && typeof value === 'object')
-      .map(([key, value]) => [key, buildPopulateForValue(value)])
-  );
+function buildPopulate(data, mediaPlan, app, schema) {
+  const populate = buildNestedPopulate(data, app, schema);
 
   for (const item of Array.isArray(mediaPlan) ? mediaPlan : []) {
     if (item && item.status === 'ready' && item.fieldPath) {
@@ -84,28 +80,37 @@ function buildPopulate(data, mediaPlan) {
   return populate;
 }
 
-function buildPopulateForValue(value) {
-  if (Array.isArray(value)) {
-    const sample = value.find((item) => item && typeof item === 'object');
-    return sample ? buildPopulateForValue(sample) : true;
+function buildNestedPopulate(data, app, schema) {
+  if (!isPlainObject(data) || !schema || !isPlainObject(schema.attributes)) {
+    return {};
   }
 
-  if (!isPlainObject(value)) {
-    return true;
-  }
+  return Object.fromEntries(
+    Object.entries(data).flatMap(([key, value]) => {
+      const attribute = schema.attributes[key];
+      if (!attribute || !POPULATABLE_ATTRIBUTE_TYPES.has(attribute.type)) {
+        return [];
+      }
 
-  const nestedPopulate = Object.fromEntries(
-    Object.entries(value)
-      .filter(([key]) => !JSON_FIELD_KEYS.has(key))
-      .filter(([, childValue]) => childValue && typeof childValue === 'object')
-      .map(([key, childValue]) => [key, buildPopulateForValue(childValue)])
+      return [[key, buildPopulateForAttribute(value, attribute, app)]];
+    })
   );
+}
 
-  if (Object.keys(nestedPopulate).length === 0) {
+function buildPopulateForAttribute(value, attribute, app) {
+  if (attribute.type !== 'component' || !attribute.component) {
     return true;
   }
 
-  return { populate: nestedPopulate };
+  const componentSchema = app.getModel(attribute.component);
+  const componentData = Array.isArray(value)
+    ? value.find((item) => isPlainObject(item))
+    : value;
+  const nestedPopulate = buildNestedPopulate(componentData, app, componentSchema);
+
+  return Object.keys(nestedPopulate).length > 0
+    ? { populate: nestedPopulate }
+    : true;
 }
 
 function ensurePopulateBranch(container, key) {
@@ -136,8 +141,8 @@ function addFieldPathToPopulate(populate, fieldPath) {
   }
 }
 
-async function findSeededDocument(repository, seed, status) {
-  const populate = buildPopulate(seed.data, seed.mediaPlan);
+async function findSeededDocument(repository, seed, status, app, contentType) {
+  const populate = buildPopulate(seed.data, seed.mediaPlan, app, contentType);
   const preferredStatuses = status ? [status] : [seed.status || 'published', 'draft', 'published'];
   const uniqueStatuses = [...new Set(preferredStatuses)];
 
@@ -324,7 +329,13 @@ async function verifySeed(seed, status) {
     }
 
     const repository = app.documents(seed.uid);
-    const { document, status: foundStatus } = await findSeededDocument(repository, seed, status);
+    const { document, status: foundStatus } = await findSeededDocument(
+      repository,
+      seed,
+      status,
+      app,
+      contentType
+    );
     if (!document) {
       return {
         isValid: false,

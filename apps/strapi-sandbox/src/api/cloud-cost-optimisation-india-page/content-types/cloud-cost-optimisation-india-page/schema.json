@@ -22,9 +22,9 @@
       "component": "landing-page.hero",
       "repeatable": false
     },
-    "quick_answer_how_much_can_i_reduce_my_aws_azure_bill_in": {
+    "quick_answer": {
       "type": "component",
-      "component": "landing-page.content-section",
+      "component": "landing-page.quick-answer",
       "repeatable": false
     },
     "where_indian_companies_are_bleeding_cloud_cash_and_why": {
@@ -39,17 +39,17 @@
     },
     "actual_savings_delivered_actual_numbers": {
       "type": "component",
-      "component": "landing-page.content-section",
+      "component": "landing-page.results-table",
       "repeatable": false
     },
     "calculator": {
       "type": "component",
-      "component": "landing-page.content-section",
+      "component": "landing-page.calculator",
       "repeatable": false
     },
-    "features": {
+    "every_lever_of_cloud_cost_reduction_across_aws_azure_and": {
       "type": "component",
-      "component": "landing-page.features",
+      "component": "landing-page.content-section",
       "repeatable": false
     },
     "the_money_arrives_before_the_second_invoice_does": {
@@ -59,7 +59,7 @@
     },
     "section_20_savings_in_90_days_or_we_pay_the_difference": {
       "type": "component",
-      "component": "landing-page.content-section",
+      "component": "landing-page.guarantee",
       "repeatable": false
     },
     "testimonials": {
@@ -69,7 +69,7 @@
     },
     "average_cloud_waste_in_indian_mid_market": {
       "type": "component",
-      "component": "landing-page.content-section",
+      "component": "landing-page.stats-band",
       "repeatable": false
     },
     "faq": {
@@ -77,9 +77,9 @@
       "component": "landing-page.faq",
       "repeatable": false
     },
-    "find_out_exactly_what_you_re_wasting": {
+    "find_out_exactly_what_you_re_wasting_before_the_next": {
       "type": "component",
-      "component": "landing-page.content-section",
+      "component": "landing-page.cta",
       "repeatable": false
     }
   }

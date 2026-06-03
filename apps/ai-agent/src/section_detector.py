@@ -252,6 +252,8 @@ def extract_structured_content(tag: Tag) -> dict[str, Any]:
     hint = infer_semantic_hint(tag)
     base_content = extract_section_title_description(tag)
 
+    if detect_quick_answer_pattern(tag):
+        return {**base_content, **extract_quick_answer_content(tag)}
     if hint == "hero":
         return {**base_content, **extract_hero_content(tag)}
     if hint == "pricing":
@@ -266,6 +268,27 @@ def extract_structured_content(tag: Tag) -> dict[str, Any]:
         return {**base_content, "form": extract_form_details(tag)}
 
     return base_content
+
+
+def extract_quick_answer_content(tag: Tag) -> dict[str, str]:
+    label = next(
+        (
+            clean_text(candidate.get_text(" "))
+            for candidate in tag.find_all(["span", "strong"])
+            if "quick answer" in clean_text(candidate.get_text(" ")).lower()
+        ),
+        "",
+    )
+    label = label or extract_prominent_label(tag) or extract_main_heading(tag)["text"]
+    paragraph = tag.find("p")
+    answer = clean_text(paragraph.get_text(" ")) if paragraph else ""
+
+    return {
+        "eyebrow": "Quick Answer",
+        "title": label,
+        "description": answer,
+        "body": answer,
+    }
 
 
 def extract_section_title_description(tag: Tag) -> dict[str, str]:
@@ -694,6 +717,8 @@ def infer_semantic_hint(tag: Tag) -> str:
         return "faq"
     if has_descendant_class_containing(tag, "testimonial", "test-card") or tag.find("blockquote"):
         return "testimonial"
+    if detect_quick_answer_pattern(tag):
+        return "proof"
 
     for keyword in SECTION_KEYWORDS:
         if contains_keyword(structural, keyword) or contains_keyword(heading, keyword):
@@ -705,6 +730,10 @@ def infer_semantic_hint(tag: Tag) -> str:
         return "form"
 
     return "unknown"
+
+
+def detect_quick_answer_pattern(tag: Tag) -> bool:
+    return bool(re.search(r"\bquick answer\b", clean_text(tag.get_text(" ")).lower()))
 
 
 def contains_keyword(text: str, keyword: str) -> bool:

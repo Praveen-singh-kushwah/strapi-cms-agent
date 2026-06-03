@@ -81,6 +81,18 @@ CANONICAL_COMPONENT_ALIASES = {
     "contact": {"contact", "contact-section", "section-contact"},
     "form-config": {"form-config", "contact-form", "form"},
     "form-field": {"form-field", "input-field"},
+    "quick-answer": {"quick-answer", "answer-box", "proof-box", "aeo-answer-box"},
+    "quick-answer-item": {"quick-answer-item", "answer-item", "proof-item"},
+    "timeline": {"timeline", "roi-timeline", "section-timeline"},
+    "timeline-item": {"timeline-item", "timeline-step", "timeline-phase", "roi-phase"},
+    "process": {"process", "process-section", "steps", "process-steps"},
+    "process-step": {"process-step", "step-item", "process-item"},
+    "results-table": {"results-table", "proof-table", "savings-table", "results"},
+    "calculator": {"calculator", "calculator-section", "finops-calculator"},
+    "stats-band": {"stats-band", "trust-band", "metrics-band", "stats"},
+    "stat-item": {"stat-item", "metric-item", "trust-item"},
+    "guarantee": {"guarantee", "guarantee-box", "promise"},
+    "cta": {"cta", "final-cta", "call-to-action"},
 }
 CANONICAL_COMPONENT_BY_HINT = {
     "hero": "hero",
@@ -90,7 +102,58 @@ CANONICAL_COMPONENT_BY_HINT = {
     "faq": "faq",
     "contact": "contact",
     "form": "contact",
+    "timeline": "timeline",
+    "process": "process",
+    "results": "results-table",
+    "calculator": "calculator",
+    "trust": "stats-band",
+    "cta": "cta",
 }
+CANONICAL_COMPONENT_BY_SECTION_TYPE = {
+    "roi_timeline": "timeline",
+    "timeline": "timeline",
+    "process_steps": "process",
+    "finops_process": "process",
+    "results_table": "results-table",
+    "proof_table": "results-table",
+    "savings_table": "results-table",
+    "quick_answer": "quick-answer",
+    "answer_box": "quick-answer",
+    "proof_box": "quick-answer",
+    "aeo_answer_box": "quick-answer",
+    "cost_leaks": "features",
+    "finops_calculator": "calculator",
+    "cost_calculator": "calculator",
+    "cost_savings_calculator": "calculator",
+    "trust_metrics": "stats-band",
+    "trust_band": "stats-band",
+    "stats_band": "stats-band",
+    "metrics_band": "stats-band",
+    "guarantee": "guarantee",
+    "guarantee_box": "guarantee",
+    "final_cta": "cta",
+    "call_to_action": "cta",
+}
+SEMANTIC_COMPONENT_TYPE_FRAGMENTS = (
+    ("quick_answer", "quick-answer"),
+    ("answer_box", "quick-answer"),
+    ("proof_box", "quick-answer"),
+    ("timeline", "timeline"),
+    ("process", "process"),
+    ("step", "process"),
+    ("result", "results-table"),
+    ("table", "results-table"),
+    ("proof", "results-table"),
+    ("calculator", "calculator"),
+    ("calc", "calculator"),
+    ("trust", "stats-band"),
+    ("stat", "stats-band"),
+    ("metric", "stats-band"),
+    ("guarantee", "guarantee"),
+    ("cta", "cta"),
+    ("call_to_action", "cta"),
+)
+STABLE_ATTRIBUTE_HINTS = {"hero", "feature", "testimonial", "pricing", "faq", "contact"}
 LAYOUT_SECTION_HINTS = {"header", "footer"}
 GENERIC_SECTION_COMPONENT = "content-section"
 GENERIC_ITEM_COMPONENT = "content-item"
@@ -1452,18 +1515,25 @@ def build_shared_section_components(
     sections = html_analysis.get("candidateSections", [])
     component_builders = {
         "hero": hero_components,
-        "feature": feature_components,
-        "testimonial": testimonial_components,
+        "features": feature_components,
+        "testimonials": testimonial_components,
         "pricing": pricing_components,
         "faq": faq_components,
         "contact": contact_components,
-        "form": contact_components,
+        "quick-answer": quick_answer_components,
+        "timeline": timeline_components,
+        "process": process_components,
+        "results-table": results_table_components,
+        "calculator": calculator_components,
+        "stats-band": stats_band_components,
+        "guarantee": guarantee_components,
+        "cta": cta_components,
     }
 
     components_by_uid: dict[str, ComponentPlan] = {}
     for section in sections:
-        hint = section.get("semanticHint", "unknown")
-        builder = component_builders.get(hint)
+        file_name = component_file_name_for_section(section)
+        builder = component_builders.get(file_name)
         components = builder(category, section) if builder else []
         if not components and is_plannable_section(section):
             components = generic_content_components(category)
@@ -1671,13 +1741,165 @@ def generic_content_components(category: str) -> list[ComponentPlan]:
                 FieldPlan(name="text", type="text"),
                 FieldPlan(name="value", type="string"),
                 FieldPlan(name="label", type="string"),
+                FieldPlan(name="period", type="string"),
+                FieldPlan(name="saving", type="string"),
+                FieldPlan(name="price", type="string"),
                 FieldPlan(name="quote", type="text"),
                 FieldPlan(name="author_name", type="string"),
                 FieldPlan(name="author_role", type="string"),
+                FieldPlan(name="features", type="json"),
                 FieldPlan(name="image", type="media", multiple=False, allowedTypes=["images"]),
                 FieldPlan(name="cta", type="component", component="shared.link", repeatable=False),
             ],
         ),
+    ]
+
+
+def quick_answer_components(category: str, section: dict[str, Any] | None = None) -> list[ComponentPlan]:
+    return rich_content_components(
+        category,
+        section,
+        uid_name="quick-answer",
+        display_name="Quick Answer",
+        item_name="quick-answer-item",
+        item_display_name="Quick Answer Item",
+    )
+
+
+def timeline_components(category: str, section: dict[str, Any] | None = None) -> list[ComponentPlan]:
+    return rich_content_components(
+        category,
+        section,
+        uid_name="timeline",
+        display_name="Timeline",
+        item_name="timeline-item",
+        item_display_name="Timeline Item",
+    )
+
+
+def process_components(category: str, section: dict[str, Any] | None = None) -> list[ComponentPlan]:
+    return rich_content_components(
+        category,
+        section,
+        uid_name="process",
+        display_name="Process",
+        item_name="process-step",
+        item_display_name="Process Step",
+    )
+
+
+def results_table_components(category: str, section: dict[str, Any] | None = None) -> list[ComponentPlan]:
+    return rich_content_components(
+        category,
+        section,
+        uid_name="results-table",
+        display_name="Results Table",
+        item_name="result-item",
+        item_display_name="Result Item",
+    )
+
+
+def calculator_components(category: str, section: dict[str, Any] | None = None) -> list[ComponentPlan]:
+    return rich_content_components(
+        category,
+        section,
+        uid_name="calculator",
+        display_name="Calculator",
+        item_name="calculator-result",
+        item_display_name="Calculator Result",
+    )
+
+
+def stats_band_components(category: str, section: dict[str, Any] | None = None) -> list[ComponentPlan]:
+    return rich_content_components(
+        category,
+        section,
+        uid_name="stats-band",
+        display_name="Stats Band",
+        item_name="stat-item",
+        item_display_name="Stat Item",
+    )
+
+
+def guarantee_components(category: str, section: dict[str, Any] | None = None) -> list[ComponentPlan]:
+    return rich_content_components(
+        category,
+        section,
+        uid_name="guarantee",
+        display_name="Guarantee",
+        item_name="guarantee-item",
+        item_display_name="Guarantee Item",
+    )
+
+
+def cta_components(category: str, section: dict[str, Any] | None = None) -> list[ComponentPlan]:
+    return rich_content_components(
+        category,
+        section,
+        uid_name="cta",
+        display_name="CTA",
+        item_name="cta-item",
+        item_display_name="CTA Item",
+    )
+
+
+def rich_content_components(
+    category: str,
+    section: dict[str, Any] | None,
+    *,
+    uid_name: str,
+    display_name: str,
+    item_name: str,
+    item_display_name: str,
+) -> list[ComponentPlan]:
+    return [
+        ComponentPlan(
+            uid=f"{category}.{uid_name}",
+            category=category,
+            displayName=display_name,
+            fileName=uid_name,
+            fields=rich_section_fields(category, section, item_name),
+        ),
+        ComponentPlan(
+            uid=f"{category}.{item_name}",
+            category=category,
+            displayName=item_display_name,
+            fileName=item_name,
+            fields=rich_item_fields(),
+        ),
+    ]
+
+
+def rich_section_fields(category: str, section: dict[str, Any] | None, item_name: str) -> list[FieldPlan]:
+    return [
+        FieldPlan(name="eyebrow", type="string"),
+        FieldPlan(name="title", type="string", required=True),
+        FieldPlan(name="description", type="text"),
+        FieldPlan(name="body", type="text"),
+        FieldPlan(name="items", type="component", component=f"{category}.{item_name}", repeatable=True),
+        FieldPlan(name="actions", type="component", component="shared.link", repeatable=True),
+        FieldPlan(name="table", type="json"),
+        FieldPlan(name="form", type="json"),
+        FieldPlan(name="metadata", type="json"),
+    ]
+
+
+def rich_item_fields() -> list[FieldPlan]:
+    return [
+        FieldPlan(name="period", type="string"),
+        FieldPlan(name="title", type="string"),
+        FieldPlan(name="description", type="text"),
+        FieldPlan(name="text", type="text"),
+        FieldPlan(name="value", type="string"),
+        FieldPlan(name="label", type="string"),
+        FieldPlan(name="saving", type="string"),
+        FieldPlan(name="price", type="string"),
+        FieldPlan(name="quote", type="text"),
+        FieldPlan(name="author_name", type="string"),
+        FieldPlan(name="author_role", type="string"),
+        FieldPlan(name="features", type="json"),
+        FieldPlan(name="image", type="media", multiple=False, allowedTypes=["images"]),
+        FieldPlan(name="cta", type="component", component="shared.link", repeatable=False),
     ]
 
 
@@ -1711,8 +1933,7 @@ def build_single_type_attributes(
     for section in sections:
         if not is_plannable_section(section):
             continue
-        hint = section.get("semanticHint", "unknown")
-        file_name = CANONICAL_COMPONENT_BY_HINT.get(hint, GENERIC_SECTION_COMPONENT)
+        file_name = component_file_name_for_section(section)
         attributes.append(
             SingleTypeAttribute(
                 name=attribute_names.get(section_key(section), attribute_name_for_section(section)),
@@ -1868,13 +2089,13 @@ def seed_generic_section(section: dict[str, Any]) -> dict[str, Any]:
     buttons = section.get("buttons", []) if isinstance(section.get("buttons"), list) else []
 
     return {
-        "eyebrow": section_eyebrow(section, title),
+        "eyebrow": first_non_empty(content.get("eyebrow"), section_eyebrow(section, title)),
         "title": title,
         "description": description,
-        "body": first_non_empty(section.get("textPreview"), description),
+        "body": first_non_empty(content.get("body"), section.get("textPreview"), description),
         "items": generic_items_from_section(section),
         "actions": [link for link in (normalize_link(button) for button in buttons) if link],
-        "table": section.get("table"),
+        "table": first_non_empty_json(section.get("table"), content.get("table")),
         "form": first_non_empty_json(section.get("forms"), content.get("form")),
         "metadata": {
             "semanticHint": section.get("semanticHint", "unknown"),
@@ -1886,6 +2107,17 @@ def seed_generic_section(section: dict[str, Any]) -> dict[str, Any]:
 
 
 def generic_items_from_section(section: dict[str, Any]) -> list[dict[str, Any]]:
+    content = section.get("structuredContent", {}) if isinstance(section, dict) else {}
+    content_items = content.get("items") if isinstance(content, dict) else None
+    if isinstance(content_items, list):
+        items = [
+            seed_generic_item(item)
+            for item in content_items
+            if isinstance(item, dict) and has_meaningful_item_seed(item)
+        ]
+        if items:
+            return items
+
     group = best_repeated_group(section.get("repeatedGroups", []))
     if not group:
         return []
@@ -1941,9 +2173,13 @@ def seed_generic_item(item: dict[str, Any]) -> dict[str, Any]:
         "text": text,
         "value": value,
         "label": label,
+        "period": item.get("period", ""),
+        "saving": item.get("saving", ""),
+        "price": item.get("price", ""),
         "quote": item.get("quote", ""),
         "author_name": item.get("authorName", ""),
         "author_role": item.get("authorRole", ""),
+        "features": item.get("features", []),
         "image": item.get("image"),
         "cta": normalize_link(item.get("cta")),
     }
@@ -2011,17 +2247,93 @@ def build_warnings(html_analysis: dict[str, Any]) -> list[str]:
     ]
 
 
+def component_file_name_for_section(section: dict[str, Any]) -> str:
+    hint = str(section.get("semanticHint") or "unknown")
+    hinted_file_name = CANONICAL_COMPONENT_BY_HINT.get(hint)
+    if hinted_file_name:
+        return hinted_file_name
+
+    section_type = snake_case(str(section.get("sectionType") or ""))
+    if section_type in CANONICAL_COMPONENT_BY_SECTION_TYPE:
+        return CANONICAL_COMPONENT_BY_SECTION_TYPE[section_type]
+
+    for fragment, file_name in SEMANTIC_COMPONENT_TYPE_FRAGMENTS:
+        if fragment in section_type:
+            return file_name
+
+    if has_table_content(section):
+        return "results-table"
+    if has_quick_answer_signal(section):
+        return "quick-answer"
+    if has_calculator_signal(section):
+        return "calculator"
+    if has_trust_stats_signal(section):
+        return "stats-band"
+    if has_guarantee_signal(section):
+        return "guarantee"
+
+    return GENERIC_SECTION_COMPONENT
+
+
+def has_table_content(section: dict[str, Any]) -> bool:
+    content = section.get("structuredContent") if isinstance(section.get("structuredContent"), dict) else {}
+    table = section.get("table") or content.get("table")
+    return isinstance(table, dict) and bool(table.get("headers") or table.get("rows"))
+
+
+def has_calculator_signal(section: dict[str, Any]) -> bool:
+    source = section_signal_text(section)
+    return "calculator" in source or "calc-section" in source
+
+
+def has_quick_answer_signal(section: dict[str, Any]) -> bool:
+    source = section_signal_text(section)
+    return bool(re.search(r"\bquick answer\b", source)) or any(
+        fragment in source
+        for fragment in ("answer-box", "answer_box", "aeo-answer", "aeo_answer")
+    )
+
+
+def has_trust_stats_signal(section: dict[str, Any]) -> bool:
+    source = section_signal_text(section)
+    return any(fragment in source for fragment in ("trust-band", "trust_metric", "trust-metric", "stats-band"))
+
+
+def has_guarantee_signal(section: dict[str, Any]) -> bool:
+    source = section_signal_text(section)
+    return bool(re.search(r"\bguarantee\b", source)) or "refund the shortfall" in source or "pay the difference" in source
+
+
+def section_signal_text(section: dict[str, Any]) -> str:
+    content = section.get("structuredContent") if isinstance(section.get("structuredContent"), dict) else {}
+    classes = " ".join(str(class_name or "") for class_name in section.get("classes", []) if isinstance(class_name, str))
+    values = [
+        section.get("semanticHint", ""),
+        section.get("sectionType", ""),
+        section.get("id", ""),
+        classes,
+        content.get("eyebrow", ""),
+        content.get("title", ""),
+        content.get("description", ""),
+        first_subheading(section),
+    ]
+    return " ".join(str(value or "") for value in values).lower()
+
+
 def attribute_name_for_section(section: dict[str, Any]) -> str:
     hint = section.get("semanticHint", "section")
+    if component_file_name_for_section(section) == "quick-answer":
+        return "quick_answer"
     if hint == "feature":
         return "features"
     if hint == "testimonial":
         return "testimonials"
-    if hint in CANONICAL_COMPONENT_BY_HINT and hint not in {"form"}:
+    if hint in STABLE_ATTRIBUTE_HINTS and hint not in {"form"}:
         return snake_case(hint)
 
     base = first_non_empty(
         section.get("id"),
+        section.get("sectionType"),
         (section.get("structuredContent") or {}).get("title") if isinstance(section.get("structuredContent"), dict) else "",
         section.get("heading"),
         first_subheading(section),
@@ -2070,7 +2382,7 @@ def is_plannable_section(section: dict[str, Any]) -> bool:
 
 
 def is_generic_fallback_section(section: dict[str, Any]) -> bool:
-    return is_plannable_section(section) and section.get("semanticHint") not in CANONICAL_COMPONENT_BY_HINT
+    return is_plannable_section(section) and component_file_name_for_section(section) == GENERIC_SECTION_COMPONENT
 
 
 def meaningful_class_name(section: dict[str, Any]) -> str:

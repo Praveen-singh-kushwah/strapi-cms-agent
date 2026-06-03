@@ -20,6 +20,15 @@
     "label": {
       "type": "string"
     },
+    "period": {
+      "type": "string"
+    },
+    "saving": {
+      "type": "string"
+    },
+    "price": {
+      "type": "string"
+    },
     "quote": {
       "type": "text"
     },
@@ -28,6 +37,9 @@
     },
     "author_role": {
       "type": "string"
+    },
+    "features": {
+      "type": "json"
     },
     "image": {
       "type": "media",
